@@ -1170,6 +1170,8 @@ Hold RSHIFT, Press LSHIFT three times
 
 Use <anu> to run its output when program starts
 
+<'''		0 db underneath
+
 Output:
 
 Settings
@@ -1211,6 +1213,8 @@ Window controls
 Full syntax
 <ifapp~: 'title | Title, *, ms n, t: f:'>
 
+Use ' before the closing > for final ms delay (optional)
+
 Stop if false
 <ifapp~: title>
 
@@ -1221,7 +1225,7 @@ Loop feedback message. Use ' (prepend to title)
 <ifapp~: '?'t,> (extended)
 
 Check 3 times. 3000ms delay
-<ifapp~: t, 3, 3000>
+<ifapp~: 't, 3, 3000>
 
 Loop infinitely
 <ifapp~: 't, 1, 1000,>
@@ -1238,19 +1242,17 @@ Link to <t:> if true (true false slot)
 Link and continue. Use <
 <ifapp~: t, 1, 1, <t: <f:><'1>
 
-Use , in false slot for retry
-
-Options for true false slot
+Options for true false slot. Use <db> algos or
 <		Continue
+,		Retry (false slot)
 !		Link to output below
 ^		Above
-
-Use ' before the closing > for final ms delay (optional)
 
 Print to Terminal
 <:x\n>		Custom message
 <'x>		Auto newline
 <' x>		No print. Use SPACE
+<''x>0		Use '' to dead line to the right
 		
 Print options
 \1		Color (1-9). Or use \012\ \R \G \B \W \00\
@@ -1261,12 +1263,10 @@ Print options
 \c		Cb
 \i		Input
 \+		Counter
+\'		Ignore
 \,		Clock. Use before and after codes for time elapsed (ms)
 \*		Toggle multi-run
-\0C\		Toggle (only \n)
-
-<''x>0		Use '' to dead line to the right
-<'''		0 db underneath
+\0C\		Toggle only \n mode
 
 Keyboard
 <ctrl>		Hold key
@@ -1307,20 +1307,16 @@ Sleep
 <,10000 40>	Make it escapable (Hold ESC; F12 pause/resume)
 
 Output speed
-<speed:160>
+<speed: 160>
 
 Message box
 <yesno: Title\ here Continue\n?>
 
 Replace cb
-<replace:(\r\n) x$1>
+<replace: (\r\n) x$1>
 
 <upper>		Uppercase cb
 <lower>
-
-Set se.txt [ReplacerDb c:\anu\db.txt] for replacer ability
-in {x:}
-x:1
 
 <Audio: c:\anu\fx.wav>
 <audio: play c:\anu\fx.mp3>
@@ -1363,7 +1359,7 @@ Manual controls
 <cb>		Paste
 <cb:>		Set
 
-<db> algos
+<db> algos (Use : or -)
 <in:>		Scan db from top to bottom
 <!in:>		Strat scan at next line for <in:> (full circle). Use !
 <^in:>		Upwards scan. Use ^
@@ -1371,14 +1367,18 @@ Manual controls
 <!#!in:>	With sanity check
 
 Misc.
-Use \\\\g for > in <ifapp:>
-Other: \g \, \| \&
+\\\\g		Inside <ifapp:> for >
+Other		\g \, \| \&
 
 CTRL+S inside
-[EditorDb] to rebuild [Database]
-[EditorSe] push new settings
+[EditorDb]	Rebuild [Database]
+[EditorSe]	Push new settings
 
 [Debug 2]	Assume
+
+Set se.txt [ReplacerDb c:\anu\db.txt] for replacer ability
+in {x:}
+x:1
 
 VS Code:	"[plaintext]": { "editor.insertSpaces": false, "editor.detectIndentation": false
 )"; //Use legacy terminal: WIN + "Terminal settings" > Windows Console Host
