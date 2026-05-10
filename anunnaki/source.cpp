@@ -92,6 +92,7 @@ bool ccm = 0; //close_ctrl_mode toggle
 
 bool fallthrough_{};
 bool clo{}; //clock
+bool multi_run{1};
 
 #pragma endregion
 
@@ -310,14 +311,17 @@ static void showOutsMsg(wstring s, wstring w, wstring s1 = L"", bool make_color 
 			{ if (make_color) write(L"\a"); } break; //beep
 			case'0': { /* \012\ */
 				wstring n = w.substr(x + 2);
-				n = n.substr(0, n.find(L"\\"));
-				w = w.substr(x + n.length() + 3);
-				x = -1;
-				if (n == L"C") { make_color = !make_color; t = 1; break; } /* \0C\ toggle make_color */
-				if (make_color && check_if_num(n) == L"" || n == L"0") { t = 1; break; }
-				if (make_color) SetConsoleTextAttribute(hC, stoi(n));
-				else wcout << L"\\0" << n << "\\";
-				t = 1; break;
+				if (n.find(L"\\") != string::npos) {
+					n = n.substr(0, n.find(L"\\"));
+					if (!n[0]) break;
+					if (n == L"C") { x += 3; make_color = !make_color; t = 1; break; } /* \0C\ toggle make_color */
+					if (make_color && check_if_num(n) == L"") { t = 1; break; }
+					x += n.length() + 2;
+					if (make_color) SetConsoleTextAttribute(hC, stoi(n));
+					else wcout << L"\\0" << n << "\\";
+					t = 1;
+				}
+				break;
 			}
 			case'1':
 			case'B':
@@ -390,8 +394,14 @@ static void showOutsMsg(wstring s, wstring w, wstring s1 = L"", bool make_color 
 					else {
 						clo = 1;
 						clockr(c1);
-						x += 2;
+						++x; t = 1;
 					}
+				}
+				break;
+			case '*':
+				if (make_color) {
+					multi_run = !multi_run;
+					++x; t = 1;
 				}
 				break;
 			}
@@ -1243,16 +1253,17 @@ Print to Terminal
 <' x>		No print. Use SPACE
 		
 Print options
-\1		Color (1-9). Or use \012\ \R \G \B \W
+\1		Color (1-9). Or use \012\ \R \G \B \W \00\
 \n		Newline
 \t		Tab
 \T		Time
 \g		>
 \c		Cb
 \i		Input
-\,		Clock
 \+		Counter
-\0C\		Toggle
+\,		Clock. Use before and after codes for time elapsed (ms)
+\*		Toggle multi-run
+\0C\		Toggle (only \n)
 
 <''x>0		Use '' to dead line to the right
 <'''		0 db underneath
@@ -3049,6 +3060,8 @@ static void key(wstring k) {
 #pragma comment(lib, "Winmm.lib")//<audio:>
 
 static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+	if (!multi_run && found_io) return 0;
+
 	if (nCode == HC_ACTION) {
 		PKBDLLHOOKSTRUCT p = (PKBDLLHOOKSTRUCT)lParam;
 	
