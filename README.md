@@ -1,6 +1,6 @@
 # Anunnaki Keyboard
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue?logo=windows)
-&nbsp;<sup>[Download](https://github.com/dnaspider/anunnaki/releases)</sup>
+&nbsp;<sup>[Download](https://github.com/dnaspider/anunnaki/releases/latest)</sup>
 
 <pre>Quick start
 
@@ -14,7 +14,8 @@ Just know when you press TAB in this editor it generates spaces instead):
   Add this 👇 to enable tab characters for .txt files instead of the default spaces.
   
   <code>"[plaintext]": {
-    "editor.insertSpaces": false
+    "editor.insertSpaces": false,
+    "editor.detectIndentation": false,
   }</code>
 
 Now I'll explain how to program your keyboard to function anunnaki style.
@@ -22,7 +23,7 @@ Now I'll explain how to program your keyboard to function anunnaki style.
 First thing to do is plan which two keys you'll be using for your shortcut.
 I made it so each key shows its corresponding value in the program
 when the key is pressed. Look:
-<img alt="image" src="https://github.com/user-attachments/assets/fb97b010-7340-4ca3-8988-ed7085642a3a" />
+<img alt="image" src="https://github.com/user-attachments/assets/1d5668a7-f6be-4934-a169-f16b6fb0192f" />
 
 These keys are pretty much the input (to make it more or less than two keys,
 in c:\anu\se.txt, adjust the InputLength setting; CTRL+S to update the program). 
@@ -88,7 +89,7 @@ or
 I RCTRL...
 
 To repeat, press:
-PAUSE/BREAK key
+ScLk key
 or 
 RCTRL+LCTRL (Hold RCTRL, press LCTRL, release RCTRL)
 
@@ -109,7 +110,7 @@ It will auto type something like this &lt;xy~:273 1365>.
 The ~ means it will store the location first
 then it will teleport to x y location: 273 1365.
 For left click, use &lt;lc>
-(Left click more than once &lt;lc2>).
+(Left click more than once &lt;lc 2>).
 
 Example:
 
