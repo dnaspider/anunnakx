@@ -3060,14 +3060,21 @@ static void key(wstring k) {
 #pragma comment(lib, "Winmm.lib")//<audio:>
 
 static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
-	if (!multi_run && found_io) return 0;
 
 	if (nCode == HC_ACTION) {
 		PKBDLLHOOKSTRUCT p = (PKBDLLHOOKSTRUCT)lParam;
-	
+		
 		if (p->flags & LLKHF_INJECTED || p->flags & LLKHF_ALTDOWN)
 			return 0;
 		
+		if (!multi_run && found_io)
+			if (p->scanCode == 1) {
+				stop = 1;
+				return 0;
+			}
+			else if (p->scanCode != PauseKey)
+				return 0;
+
 		switch (wParam) {
 			case WM_KEYDOWN:
 			case WM_SYSKEYDOWN: {
@@ -3520,7 +3527,7 @@ int main() {
     __ // \  / \\\ __\n
    / / \\\  \/  // \ \ \n
   / /   \7ANUNNAKi\R   \ \ \n
-  \ \\   //\7.12\R \\\   / /\n
+  \ \\   //\7.13\R \\\   / /\n
    \_\ //  /\  \\\ /_/\n
        \\\\ /  \ //\n
          \    /\n\n
