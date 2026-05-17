@@ -2240,14 +2240,14 @@ static void scan_db() {
 										switch (qq[3]) {
 											case 'a':
 											case 'A': {
-												HWND h{}, h1{}; DWORD pid{};
+												HWND h = FindWindowW(0, p[j].c_str());
 
 												if (qq[3] == 'A') { //ifApp
-													h = GetForegroundWindow(); h1 = FindWindowW(0, p[j].c_str());
-													if (h == h1) ++count;
+													if (GetForegroundWindow() == h) ++count;
 												}
-												else if (qq[3] == 'a') { //'ifapp
-													h = FindWindowW(0, p[j].c_str()); GetWindowThreadProcessId(h, &pid);
+												else if (qq[3] == 'a') { //ifapp
+													DWORD pid{};
+													GetWindowThreadProcessId(h, &pid);
 													if (h) {
 														if (IsIconic(h)) { ShowWindow(h, SW_RESTORE); ShowWindow(h, SWP_SHOWWINDOW); }
 														if (qq[6] == '~') SetForegroundWindow(h); //ifapp~
