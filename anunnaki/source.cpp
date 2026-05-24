@@ -41,7 +41,6 @@ editorSe = se + editor, editorDb = db + editor;
 wstring strand = L"";
 wstring qq = L"", qp = L"", qx = L"", qy = L"";
 wstring repeats = L"";
-wstring Loop_Insert_Text = L"";
 wstring out = L"";
 wstring chk = L"";
 string delimiter = "\n"; //°";
@@ -175,7 +174,7 @@ static void make_vdb_table() {
 
 		if (delimiter[0] != '\n') cell = regex_replace(cell, wregex(L"\n"), L"");
 		cell = regex_replace(cell, wregex(L"\t"), L"");
-
+		
 		//io
 		s.in.clear(); s.g.clear(); s.ft = 0;
 		s_o.out.clear();
@@ -400,7 +399,7 @@ static void showOutsMsg(wstring s, wstring w, wstring s1 = L"", bool make_color 
 				break;
 			case '*':
 				if (make_color) {
-					multi_run = !multi_run;
+					multi_run = 0;
 					++x; t = 1;
 				}
 				break;
@@ -462,8 +461,6 @@ static void load_settings() {
 		{ if (check_if_num(v) > L"") RSHIFTCtrlKeyToggle = stoi(v); else er(); } break;
 		case 865://PauseKey:
 		{ if (check_if_num(v) > L"") PauseKey = stoi(v); else er(); } break;
-		case 1708://Loop_Insert_Text:
-		{ if (!v[0]) { v[0] = '>'; } if (v[v.length() - 1] != '>') v += '>'; Loop_Insert_Text = v; } break;
 		case 1946://Kb_Key_Print_Screen:
 			Kb_Key_Print_Screen = v; break;
 		case 1083://Kb_Key_ScLk:
@@ -833,7 +830,6 @@ static void printSe() {
 	wcout << "Editor: " << editor << '\n';
 	wcout << "EditorDb: "; wcout << editorDb << '\n';
 	wcout << "EditorSe: "; wcout << editorSe << '\n';
-	wcout << "Loop_Insert_Text: " << Loop_Insert_Text << '\n';
 	cout << endl;
 }
 
@@ -1435,9 +1431,7 @@ static wstring getRGB(unsigned short bg = 0) {
 			wstring c = to_wstring(GetRValue(color)) + L" " + to_wstring(GetGValue(color)) + L" " + to_wstring(GetBValue(color));//cb
 			if (bg) {
 				if (cb) { //g + esc
-					wstring r = L"<ifrgb~:";
-					r += c + L" " + to_wstring(x) + L" " + to_wstring(y);
-					r += Loop_Insert_Text > L"" ? Loop_Insert_Text : L">";
+					wstring r = L"<ifrgb~:" + c + L" " + to_wstring(x) + L" " + to_wstring(y) + L">";
 
 					cbSet(r);
 
@@ -1446,7 +1440,7 @@ static wstring getRGB(unsigned short bg = 0) {
 				qx = to_wstring(x); qy = to_wstring(y);
 				return c + L" " + qx + L" " + qy;
 			}
-			out = L"ifrgb:" + c + L" " + to_wstring(x) + L" " + to_wstring(y) + (Loop_Insert_Text > L"" ? Loop_Insert_Text : L">");
+			out = L"ifrgb:" + c + L" " + to_wstring(x) + L" " + to_wstring(y) + L">";
 
 		}
 	}
@@ -1455,9 +1449,7 @@ static wstring getRGB(unsigned short bg = 0) {
 
 static wstring getXY() {
 	POINT pt; GetCursorPos(&pt);
-	wstring xy = to_wstring(pt.x) + L" " + to_wstring(pt.y);
-	xy += Loop_Insert_Text > L"" ? Loop_Insert_Text : L">";
-	return xy;
+	return to_wstring(pt.x) + L" " + to_wstring(pt.y) + L">";
 }
 
 static wstring getAppT() {
@@ -2932,6 +2924,7 @@ static void scan_db() {
 		prints();
 		stop = 0;
 		found_io = 0;
+		if (!multi_run) multi_run = 1;
 	}
 	
 	if (mvdb) { //<se:>
@@ -2991,7 +2984,7 @@ static void repeat() {
 		wstring t = getAppT();
 		run(L"<,><shift><alt><esc><alt-><shift->");
 		printq();
-		run(L"ifapp~:" + t + (Loop_Insert_Text > L"" ? Loop_Insert_Text : L">"));
+		run(L"ifapp~:" + t + L">");
 		repeat_switch = 4;
 
 		show_strand = s;
