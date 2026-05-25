@@ -1124,7 +1124,7 @@ static wstring connect(wstring& w, bool bg = 0) {
 }
 
 static bool qqb(const wstring s) {
-	return s == chk.substr(0, chk.find(' ')) || s + L">" == chk;
+	return s == chk || s + L">" == chk;
 }
 
 static void print_ctrls() {
@@ -1168,7 +1168,7 @@ Use <anu> to run its output when program starts
 
 <'''		0 db underneath
 
-Output:
+Output section:
 
 Settings
 <se>		Reload and show
@@ -1181,7 +1181,7 @@ Database
 <db:>		Load too. Use se.txt [Database] for fresh db
 <DB>		Reload
 
-Mouse event
+Mouse controls
 <~>		Set current position
 <xy:>		Move to
 <xy~:>		Auto set
@@ -1260,11 +1260,11 @@ Print options
 \i		Input
 \+		Counter
 \'		Ignore
-\,		Clock. Use before and after codes for time elapsed (ms)
-\*		Toggle multi-run
-\0C\		Toggle only \n mode
+\,		Use before and after codes for time elapsed (ms)
+\*		Block input until finished
+\0C\		Toggle slash commands. Newline only
 
-Keyboard
+Keyboard controls
 <ctrl>		Hold key
 <shift>
 <alt>
@@ -1354,16 +1354,21 @@ Manual controls
 
 <cb>		Paste
 <cb:>		Set
+<cb+:>		Append
+<cb-:>		Prepend
+<cl>		Length
 
-<db> algos (Use : or -)
+<db> algos. Use : or -
 <in:>		Scan db from top to bottom
 <!in:>		Strat scan at next line for <in:> (full circle). Use !
 <^in:>		Upwards scan. Use ^
 <!#!>		Get output from <db> line #. Use . for current
 <!#!in:>	With sanity check
+<!>		Get output from line below
+<^>		Above
 
 Misc.
-\\\\g		Inside <ifapp:> for >
+\\\\g		Inside <ifapp:>... for >
 Other		\g \, \| \&
 
 CTRL+S inside
@@ -1374,7 +1379,7 @@ CTRL+S inside
 
 Set se.txt [ReplacerDb c:\anu\db.txt] for replacer ability
 in {x:}
-x:1
+x:out
 
 VS Code:	"[plaintext]": { "editor.insertSpaces": false, "editor.detectIndentation": false
 )"; //Use legacy terminal: WIN + "Terminal settings" > Windows Console Host
@@ -1619,8 +1624,8 @@ static void scan_db() {
 								qp = qq.substr(chk.length(), f - chk.length()); //#
 							}
 							else if (qq.substr(0, f).find(' ') != std::string::npos) { //<test #>
-								chk = qq.substr(0, qq.find(' ') + 1); //<test:
-								qp = qq.substr(chk.length(), f - chk.length()); //#
+								chk = qq.substr(0, qq.find(' ')); //<test
+								qp = qq.substr(chk.length() + 1, f - chk.length() + 1); //#
 							}
 						}
 
@@ -1636,10 +1641,13 @@ static void scan_db() {
 
 					switch (qq[1]) {
 					case '@': //<@:> follow
-						found_io = found_io_repeat;
-						follow = 0;
-						if (out_speed > 0) out_sleep = 0;
-						rei();
+						if (qq[2] == ':' && qq[3] == '>') {
+							found_io = found_io_repeat;
+							follow = 0;
+							if (out_speed > 0) out_sleep = 0;
+							rei();
+						}
+						else connect(out);
 						break;
 					case ':':
 						if (qqb(L"<:")) { //cout
@@ -1837,15 +1845,20 @@ static void scan_db() {
 							else if (qqb(L"<ctrl")) kb_press(L"<ctrl", VK_CONTROL);
 							else connect(out);
 							break;
-						case 'b':
-							if (qqb(L"<cb") || qqb(L"<cb:")) {
-								if (qq[3] == '>') {
-									kb_hold(VK_CONTROL); kb('v'); kb_release(VK_CONTROL);
-								}
-								else if (qq[3] == ':') {
-									if (npos_find(qp, '\\', 1)) qp = regex_replace(qp, wregex(L"\\\\\\\\\\\\\\\\g"), L">"); // \\\\g
+						case 'b': //<cb> <cb:> <cb+:> <cb-:>
+							if (qq[3] == '>' || qp[0] && (chk == L"<cb:" || chk == L"<cb+:" || chk == L"<cb-:")) {
+								if (qp[0]) {
+									wstring _ = chk.substr(3);
+									if (_ == L"+:" || _ == L"-:") {
+										auto x = cbGet();
+										if (_[0] == '+')
+											qp = x + qp;
+										else if (_[0] == '-')
+											qp += x;
+									}
 									cbSet(qp);
 								}
+								else { kb_hold(VK_CONTROL); kb('v'); kb_release(VK_CONTROL); }
 								rei();
 							}
 							else connect(out);
@@ -3080,7 +3093,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 					}
 				}
 
-				if (pause || isWinKeyPressed || isCkey0Pressed) return 0; //cKey 0
+				if (pause || isWinKeyPressed) return 0;
 
 				if (debug == 1) printf("Scan Code = %d\n", p->scanCode);
 
@@ -3133,8 +3146,17 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 					return 0;
 				}
 
-				if (isLshiftPressed || isRshiftPressed
-					|| isLctrlPressed || isRctrlPressed)
+				if (isLshiftPressed || isRshiftPressed)
+					break;
+
+				if (p->scanCode == 31) {
+					if (isLctrlPressed || isRctrlPressed || isCkey0Pressed) {
+						ctrl_s = 1;
+						return 0;
+					}
+				}
+
+				if (isLctrlPressed || isRctrlPressed || isCkey0Pressed)
 					break;
 
 				if (p->scanCode == repeat_key) {
@@ -3361,11 +3383,8 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 				if (pause || isWinKeyPressed) return 0;
 
 				++breaker;
-				
+
 				switch (p->scanCode) {
-				case 31: //S
-					if (isLctrlPressed || isRctrlPressed || isCkey0Pressed) ctrl_s = 1;
-					break;
 				case 42: //Lshift
 					isLshiftPressed = 0;
 					GetAsyncKeyState(VK_RSHIFT); if (GetAsyncKeyState(VK_RSHIFT) && !isRctrlPressed) {
@@ -3519,8 +3538,8 @@ int main() {
          /    \ \n
     __ // \  / \\\ __\n
    / / \\\  \/  // \ \ \n
-  / /   \7ANUNNAKi\R   \ \ \n
-  \ \\   //\7.13\R \\\   / /\n
+  / /   \7DNASPiDER\R  \ \ \n
+  \ \\   //\7 4g \R\\\   / /\n
    \_\ //  /\  \\\ /_/\n
        \\\\ /  \ //\n
          \    /\n\n
