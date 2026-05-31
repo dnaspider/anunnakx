@@ -977,7 +977,7 @@ static wstring get_out(wstring q) {
 			a = a.substr(0, a.find('!'));
 
 			if (check_if_num(a) != L"") {
-				n = a[0] == '.' ? found_io : stoi(a); //<!.!> | <!#!>
+				n = a[0] == '.' ? found_io : stoi(a); //Debug:2 <!.!> | <!#!>
 
 				if (n <= 0 || n > vstrand_out.size()) return L"";
 
@@ -1048,7 +1048,7 @@ static wstring is_replacer(wstring& q) { // Replacer | {var:} {var-} {var>} | <r
 		wstring tqg = q, tq{};
 		GetAsyncKeyState(VK_ESCAPE);
 		while (tqg.find('{') != string::npos) {
-			if (GetAsyncKeyState(VK_ESCAPE)) break;
+			if (GetAsyncKeyState(VK_ESCAPE)) stop = 1;
 			q = q.substr(q.find('{') + 1);
 			q = q.substr(0, q.find(L'}'));
 			tq = q;
@@ -1625,7 +1625,7 @@ static void scan_db() {
 							}
 							else if (qq.substr(0, f).find(' ') != std::string::npos) { //<test #>
 								chk = qq.substr(0, qq.find(' ')); //<test
-								qp = qq.substr(chk.length() + 1, f - chk.length() + 1); //#
+								qp = qq.substr(chk.length() + 1, f - chk.length() - 1); //#
 							}
 						}
 
