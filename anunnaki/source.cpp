@@ -1631,7 +1631,7 @@ static void scan_db() {
 
 						if (qp[0] == ' ') qp = qp.substr(1);
 
-						if (!chk[0]) chk = qq.substr(0, f + 1); //<test:>
+						if (!chk[0]) chk = qq.substr(0, f + 1); //<test>
 					}
 					else {
 						qp = L"";
