@@ -3197,7 +3197,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 					}
 					GetAsyncKeyState(VK_OEM_PLUS); if (GetAsyncKeyState(VK_OEM_PLUS)) { //= + esc: repeat
 						kb_release(VK_ESCAPE); kb(VK_BACK);
-						repeat(); return 0;
+						repeat(); return 1;
 					}
 					GetAsyncKeyState(VK_OEM_COMMA); if (GetAsyncKeyState(VK_OEM_COMMA)) { //, + esc
 						rshift_lshift = 1;
