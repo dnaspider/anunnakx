@@ -3431,6 +3431,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 							isRshiftPressed = 0;
 							isLctrlPressed = 0;
 							isRctrlPressed = 0;
+							isWinKeyPressed = 0;
 							breaker = 0;
 							return 0;
 						}
