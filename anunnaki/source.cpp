@@ -1128,7 +1128,7 @@ static bool qqb(const wstring s) {
 }
 
 static void print_ctrls() {
-	cout << R"(Anunnaki Keyboard
+	cout << R"(Anunnaki Controller
 
 ?+ESC		Help
 X+ESC		Exit
