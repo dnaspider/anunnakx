@@ -3136,8 +3136,8 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 						if (!extended)
 							isLctrlPressed = 1;
 						else {
+							if (!isRctrlPressed) clockr(c1);
 							isRctrlPressed = 1;
-							clockr(c1);
 						}
 					}
 					else
