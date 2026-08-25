@@ -6,6 +6,7 @@
 #include <regex>
 #include <codecvt>
 #include <thread>
+#include <unordered_map>
 
 using namespace std;
 using ctp = chrono::steady_clock::time_point;
@@ -46,6 +47,7 @@ wstring chk = L"";
 string delimiter = "\n"; //°";
 vector<Strand> vstrand{};
 vector<Strand_out> vstrand_out{};
+unordered_map<wstring, size_t> vstrand_map{};
 size_t c = 0;
 size_t found_io = 0, found_io_repeat = 0, follow = 0;
 ctp c1{}, c2{}; //CtrlKey elapsed
@@ -152,6 +154,8 @@ static void make_vdb_table() {
 	wstring cell;
 	string cell0, cells;
 
+	size_t count{};
+
 	while (getline(f, multi_line ? cell0 : cells, delimiter[0])) {
 
 		if (multi_line) {
@@ -169,7 +173,7 @@ static void make_vdb_table() {
 			if (cells[1] == '\'' && cells.substr(0, 4) == "<'''")
 				break;
 		}
-
+		
 		cell = utf8_to_wstring(cells);
 
 		if (delimiter[0] != '\n') cell = regex_replace(cell, wregex(L"\n"), L"");
@@ -202,6 +206,8 @@ static void make_vdb_table() {
 		vstrand.push_back(s);
 		vstrand_out.push_back(s_o);
 
+		vstrand_map.emplace(make_pair(s.in.ends_with(L">") ? s.in.substr(0, s.in.length() - s.g.length()) : s.in, count));
+		++count;
 	}
 	f.close();
 
@@ -959,90 +965,6 @@ static void setQxQy(wstring x) {
 	//wcout << "x: " << x  << "\nqx: " << qx << "\nqy: " << qy << endl;
 }
 
-static wstring get_out(wstring q) {
-	wstring g = q.substr(q.find_first_of(L" -:>"));
-	if (q[0] != '<') q = q.substr(0, q.length() - g.length());
-
-	if (vstrand.at(found_io - 1).in == q && vstrand.at(found_io - 1).g == g) //possible <x:><x:> loop
-		return vstrand_out.at(found_io - 1).out;
-
-	size_t n{};
-
-	wstring b;
-	
-	switch (q[1]) {
-	case '!': { //downwards scan or go to line #; <!x:>
-		if (q.substr(2).find('!') != string::npos) { //<!a!b:>
-			wstring a = q.substr(2);
-			a = a.substr(0, a.find('!'));
-
-			if (check_if_num(a) != L"") {
-				n = a[0] == '.' ? found_io : stoi(a); //Debug:2 <!.!> | <!#!>
-
-				if (n <= 0 || n > vstrand_out.size()) return L"";
-
-				n -= 1;
-
-				b = L"<" + q.substr(a.length() + 3);
-
-				// go to line #; <!#!> || <!#!x:>
-				if (b == L"<" + g || vstrand.at(n).in == b && vstrand.at(n).g == g) {
-					found_io = n + 1;
-					return vstrand_out.at(n).out;
-				}
-			}
-
-			return L"";
-		}
-
-		b = L"<" + q.substr(2);
-
-		n = found_io < vstrand.size() ? found_io : n;
-
-		if (b == L"<>") //!
-			return vstrand_out.at(n).out;
-
-		for (; n != found_io - 1; ++n) { //<!x:>
-			if (vstrand.at(n).in == b && vstrand.at(n).g == g) {
-				found_io = n + 1;
-				return vstrand_out.at(n).out;
-			}
-			if (n == vstrand.size() - 1) n = -1;
-		}
-	}
-		break;
-	case '^': { //upwards scan; <^x:>
-		if (vstrand.size() == 1) return L"";
-		if (found_io == 1) n = vstrand.size() - 1;
-		else
-			n = found_io == vstrand.size() ? vstrand.size() - 2 : found_io - 2;
-
-		b = L"<" + q.substr(2);
-
-		if (b == L"<>") //^
-			return vstrand_out.at(n).out;
-
-		for (; n != found_io - 1; --n) { //<^b:>
-			if (vstrand.at(n).in == b && vstrand.at(n).g == g) {
-				found_io = n + 1;
-				return vstrand_out.at(n).out;
-			}
-			if (n == 0) n = vstrand.size();
-		}
-	}
-		break;
-	default: //regular top to bottom scan; <x:>
-		for (; n < vstrand.size(); ++n)
-			if (vstrand.at(n).in == q && vstrand.at(n).g == g) {
-				found_io = n + 1;
-				return vstrand_out.at(n).out;
-			}
-	}
-
-	return L"";
-
-}
-
 static wstring is_replacer(wstring& q) { // Replacer | {var:} {var-} {var>} | <r:>
 	if (q.find('{') != string::npos && q.find('}') != string::npos) {
 		wstring tqg = q, tq{};
@@ -1054,8 +976,16 @@ static wstring is_replacer(wstring& q) { // Replacer | {var:} {var-} {var>} | <r
 			tq = q;
 			if (q[0]) {
 				if (q[0] == '\'' && q != L"'") { tqg.replace(tqg.find('{'), 2 + q.length(), L""); q = tqg; continue; } //{'ignore}
-				if (q.length() > 1 && (q[q.length() - 1] == ' ' || q[q.length() - 1] == '-' || q[q.length() - 1] == ':' || q[q.length() - 1] == '>'))
-					q = get_out(q);
+				if (q.length() > 1 && (q[q.length() - 1] == ' ' || q[q.length() - 1] == '-' || q[q.length() - 1] == ':' || q[q.length() - 1] == '>')) {
+					wstring k = L"";
+					if (q.ends_with(L":>") || q.ends_with(L"->") || q.ends_with(L" >"))
+						k = q.substr(0, q.length() - 2);
+					else
+						k = q.substr(0, q.find_first_of(L" -:>"));
+					
+					if (vstrand_map.contains(k) && q.ends_with(vstrand.at(vstrand_map[k]).g) && q.length() == k.length() + vstrand.at(vstrand_map[k]).g.length())
+						q = vstrand_out.at(vstrand_map[k]).out;
+				}
 				else {
 					q = tqg;
 					return q;
@@ -1092,11 +1022,11 @@ static wstring is_replacer(wstring& q) { // Replacer | {var:} {var-} {var>} | <r
 
 static wstring connect(wstring& w, bool bg = 0) {
 	bool con{};
-	wstring qqs = qq.substr(0, qq.find('>') + 1);
-	if (bg) { qqs = qq + L">"; con = 1; }
+	wstring k = qq.substr(0, qq.find('>') + 1);
+	if (bg) { k = qq + L">"; con = 1; }
 
-	if (qqs.find('>') != string::npos) {
-		wchar_t s = qqs[qqs.length() - 2];
+	if (k.find('>') != string::npos) {
+		wchar_t s = k[k.length() - 2];
 		if (s == '!' || s == '^' || s == ':' || s == '-' || s == ' ')
 			con = 1;
 	}
@@ -1104,14 +1034,18 @@ static wstring connect(wstring& w, bool bg = 0) {
 	if (con) {
 		bool x{};
 		if (!follow) { follow = found_io; x = 1; }
+		wstring o = L"";
 
-		wstring o = get_out(qqs);
+		if (auto v = k.substr(0, k.length() - 2); k == vstrand.at(vstrand_map[v]).in) {
+			found_io = vstrand_map[v];
+			o = vstrand_out.at(found_io).out;
+		}
 		
 		if (o[0]) {
 			if (x) o += L"<@:>"; //follow
 			if (bg) return replacerDb[0] ? is_replacer(o) : o;
 			
-			w = o + qq.substr(qqs.length());
+			w = o + qq.substr(k.length());
 			if (replacerDb[0]) is_replacer(w);
 			c = -1;
 			if (out_speed > 0) out_sleep = 0;
@@ -1178,7 +1112,7 @@ Settings
 
 Database
 <db>		Show
-<db:>		Load too. Use se.txt [Database] for fresh db
+<db:>		Load. Use se.txt [Database]
 <DB>		Reload
 
 Mouse controls
@@ -1241,8 +1175,6 @@ Link and continue. Use <
 Options for true false slot. Use <db> algos or
 <		Continue
 ,		Retry (false slot)
-!		Link to output below
-^		Above
 
 Print to Terminal
 <:x\n>		Custom message
@@ -1359,13 +1291,7 @@ Manual controls
 <cl>		Length
 
 <db> algos. Use : or -
-<in:>		Scan db from top to bottom
-<!in:>		Strat scan at next line for <in:> (full circle). Use !
-<^in:>		Upwards scan. Use ^
-<!#!>		Get output from <db> line #. Use . for current
-<!#!in:>	With sanity check
-<!>		Get output from line below
-<^>		Above
+<in:>		Scan db
 
 Misc.
 \\\\g		Inside <ifapp:>... for >
@@ -1512,6 +1438,19 @@ static void multi_sleep(Multi_ &multi_, unsigned long ms, unsigned long n = 1) {
 	}
 }
 
+static void close_run() {
+	out_speed = 0;
+	if (RSHIFTLSHIFT_Only) rri = 0;
+	if (found_io || strand[0] && strand[strand.length() - 1] == '>') {
+		if (ccm) { close_ctrl_mode = !close_ctrl_mode; ccm = 0; }
+		if (strand[0]) strand.clear();
+		stop = 0;
+		found_io = 0;
+		if (!multi_run) multi_run = 1;
+		prints();
+	}
+}
+
 static void scan_db() {
 
 	if (repeats[0] != '>') found_io_repeat = 0;
@@ -1520,1431 +1459,1419 @@ static void scan_db() {
 	stop = 0;
 	fallthrough_ = 0;
 	clo = 0;
+	if (out[0]) out.clear();
 
-	for (size_t i = 0; i < vstrand.size(); ++i)
-	{
-		if (repeats[0] == '>'
-			|| fallthrough_
-			|| close_ctrl_mode && vstrand.at(i).in == strand.substr(0, strand.length() - 1)
-			|| vstrand.at(i).in[0] == '<' &&
-				vstrand.at(i).in.substr(0, vstrand.at(i).in.length() - vstrand.at(i).g.length())
-				== strand.substr(0, strand.length() - 1)
-			|| !close_ctrl_mode && vstrand.at(i).in == strand
-			|| !close_ctrl_mode && vstrand.at(i).in == strand + vstrand.at(i).g
-			) {
+	if (repeats[0] == '>') {
+		repeats = repeats.substr(1);
+		if (!repeats[0]) return;
+		out = repeats;
+		found_io = found_io_repeat;
+	}
+	else if (strand[0]) {
+		if (wstring k = strand.substr(0, strand.length() - (close_ctrl_mode ? 1 : 0)); vstrand_map.contains(k)) {
+			found_io = vstrand_map[k];
+			repeat_switch = 0;
+			
+			//handle fallthrough_
+			if (vstrand.at(found_io).ft) {
+				for (size_t i = found_io; i < vstrand.size(); ++i) {
+					if (!vstrand.at(i).ft) {
+						found_io = found_io_repeat = i;
+						break;
+					}
+				}
+			}
 
-			if (out[0]) out.clear();
+			//backspace input depending on g and set repeat and input accordingly
+			switch (vstrand.at(found_io).g[0])
+			{
+			case '>':
+				if (vstrand.at(found_io).in[0] == '<') {
+					repeats = vstrand.at(found_io).in.substr(1);
+					repeats.pop_back();
+				}
+				else
+					repeats = vstrand.at(found_io).in;
+				repeats += vstrand_out.at(found_io).out;
+				out = vstrand_out.at(found_io).out;
+				break;
+				//case ' ':
+				//case '-':
+			default:
+				for (auto x : strand) {
+					if (x == '>' || x == '<') continue;
+					kb(VK_BACK);
+				}
+				[[fallthrough]];
+			case ':':
+				out = repeats = vstrand_out.at(found_io).out;
+			}
 
-			if (repeats[0] == '>') {
-				repeats = repeats.substr(1);
-				if (!repeats[0]) return;
-				out = repeats;
-				found_io = found_io_repeat;
+		}
+		else {
+			close_run();
+			return;
+		}
+	}
+
+	//set first hit
+	found_io_repeat = found_io;
+
+	//run output
+
+	if (replacerDb[0]) is_replacer(out); //<r:>
+
+	Multi_ multi_;
+
+	if (strand[0]) strand.clear();
+
+	for (c = 0; c < out.length(); ++c) {
+
+		if_esc();
+		if (pause) if_pause();
+		if (stop) { stop = 0; break; }
+
+		if (out_speed > 0) {
+			if (out_sleep) {
+				if (c)
+					multi_sleep(multi_, out_speed);
+			}
+			out_sleep = 1;
+		}
+
+		switch (out[c]) { //extracted
+		case '<':
+			qq = out.substr(c, out.length() - c); //<test>
+					
+			if (qq[1] == '!' || qq[1] == '^') { //<!x:> or <^x:> scan
+				if (qq[2] != '!' && qq[2] != ':' || qq[1] == '^') {
+					connect(out);
+					break;
+				}
+			}
+
+			if (auto f = qq.find('>'); f != string::npos) {
+				chk = L"";
+				qp = L"";
+						
+				if (qq[1] == ':' || qq[1] == '\'' || qq[1] == ',') { //<:> <'> <,>
+					chk = qq.substr(0, 2); //<:
+					qp = qq.substr(2, f - 2); //#
+				}
+				else {
+					if (qq.substr(0, f).find(':') != std::string::npos) { //<test:#>
+						chk = qq.substr(0, qq.find(':') + 1); //<test:
+						qp = qq.substr(chk.length(), f - chk.length()); //#
+					}
+					else if (qq.substr(0, f).find(' ') != std::string::npos) { //<test #>
+						chk = qq.substr(0, qq.find(' ')); //<test
+						qp = qq.substr(chk.length() + 1, f - chk.length() - 1); //#
+					}
+				}
+
+				if (qp[0] == ' ') qp = qp.substr(1);
+
+				if (!chk[0]) chk = qq.substr(0, f + 1); //<test>
 			}
 			else {
-				repeat_switch = 0;
-
-				//fallthrough
-				if (fallthrough_ && !vstrand.at(i).ft) fallthrough_ = 0;
-				if (vstrand.at(i).ft) { fallthrough_ = 1; continue; }
-				
-				//backspace input depending on g and set repeat and input accordingly
-				switch (vstrand.at(i).g[0])
-				{
-				case '>':
-					if (vstrand.at(i).in[0] == '<') {
-						repeats = vstrand.at(i).in.substr(1);
-						repeats.pop_back();
-					}
-					else
-						repeats = vstrand.at(i).in;
-					repeats += vstrand_out.at(i).out;
-					out = vstrand_out.at(i).out;
-					break;
-					//case ' ':
-					//case '-':
-				default:
-					for (auto x : strand) {
-						if (x == '>' || x == '<') continue;
-						kb(VK_BACK);
-					}
-					[[fallthrough]];
-				case ':':
-					out = repeats = vstrand_out.at(i).out;
-				}
-
-				//set first hit
-				found_io = found_io_repeat = i + 1;
+				qp = L"";
+				printq();
+				continue;
 			}
 
-			//run output
-
-			if (replacerDb[0]) is_replacer(out); //<r:>
-
-			Multi_ multi_;
-
-			if (strand[0]) strand.clear();
-
-			for (c = 0; c < out.length(); ++c) {
-
-				if_esc();
-				if (pause) if_pause();
-				if (stop) { stop = 0; break; }
-
-				if (out_speed > 0) {
-					if (out_sleep) {
-						if (c)
-							multi_sleep(multi_, out_speed);
-					}
-					out_sleep = 1;
+			switch (qq[1]) {
+			case '@': //<@:> follow
+				if (qq[2] == ':' && qq[3] == '>') {
+					found_io = found_io_repeat;
+					follow = 0;
+					if (out_speed > 0) out_sleep = 0;
+					rei();
 				}
-
-				switch (out[c]) { //extracted
-				case '<':
-					qq = out.substr(c, out.length() - c); //<test>
-					
-					if (qq[1] == '!' || qq[1] == '^') { //<!x:> or <^x:> scan
-						if (qq[2] != '!' && qq[2] != ':' || qq[1] == '^') {
-							connect(out);
-							break;
-						}
-					}
-
-					if (auto f = qq.find('>'); f != string::npos) {
-						chk = L"";
-						qp = L"";
-						
-						if (qq[1] == ':' || qq[1] == '\'' || qq[1] == ',') { //<:> <'> <,>
-							chk = qq.substr(0, 2); //<:
-							qp = qq.substr(2, f - 2); //#
+				else connect(out);
+				break;
+			case ':':
+				if (qqb(L"<:")) { //cout
+					showOutsMsg(L"", qp, L"", 1);
+					rei();
+					break;
+				}
+				else connect(out);
+				break;
+			case '#':
+				if (qqb(L"<#:")) { //ascii_calc
+					if (qp.find('\\') != string::npos) qp = regex_replace(qp, wregex(L"\\\\g"), L">");
+					int s{}; for (auto& x : qp) s += x;
+					auto q = to_wstring(s);	cbSet(q);
+					rei();
+				}
+				else connect(out);
+				break;
+			case '!':
+				if (qqb(L"<!:")) { //set strand
+					strand = qp;
+					prints();
+					return;
+				}
+				else if (qqb(L"<!!:") || qqb(L"<!!!:")) { //set repeat
+					wstring v = qq.substr(qq.find(':') + 1);
+					v = v.substr(0, v.find('>'));
+					if (qq[qq.find(':') + 1] != '<')
+						num_error(L"Not a link", v, L"VALUE:");
+					else {
+						if (qq[3] == '!') { multi_.store_ = out; multi_.qq_ = qq; } //!!!
+						qq = v;
+						v = connect(v, 1);
+						if (!v[0]) {
+							kb(VK_BACK);
+							sleep(frequency / 2);
+							num_error(L"No output", qq, L"VALUE:");
 						}
 						else {
-							if (qq.substr(0, f).find(':') != std::string::npos) { //<test:#>
-								chk = qq.substr(0, qq.find(':') + 1); //<test:
-								qp = qq.substr(chk.length(), f - chk.length()); //#
+							repeats = v;
+
+							if (multi_.store_[0]) { //!!! run
+								multi_.c_ = c;
+								repeat();
+								sleep(1);
+								out = multi_.store_.substr(multi_.c_);
+								c = 0;
 							}
-							else if (qq.substr(0, f).find(' ') != std::string::npos) { //<test #>
-								chk = qq.substr(0, qq.find(' ')); //<test
-								qp = qq.substr(chk.length() + 1, f - chk.length() - 1); //#
-							}
+
+							qq = out;
+							rei();
 						}
-
-						if (qp[0] == ' ') qp = qp.substr(1);
-
-						if (!chk[0]) chk = qq.substr(0, f + 1); //<test>
 					}
-					else {
-						qp = L"";
-						printq();
+				}
+				else connect(out);
+				break;
+			case '~':
+				if (qqb(L"<~>")) {//manual set xy
+					POINT pt; GetCursorPos(&pt); qxcc = pt.x; qycc = pt.y; rei();
+				}
+				else if (qqb(L"<~~>")) {//manual return xy
+					SetCursorPos(qxcc, qycc); rei();
+				}
+				else connect(out);
+				break;
+			case'+': //calc
+			case'-':
+			case'*':
+			case'/':
+			case'%':
+				if (qq[2] == '>' || qq[3] != '>') { //<+:>
+					if (qq[3] == ' ') { //<+: #>
+						wstring cb = cbGet();
+						wstring e = cb;
+						if (!e[0] || check_if_num(e, L"clipboard") == L"") { connect(out); continue; }
+						multi_.icp_ = stod(cb);
+					}
+
+					bool b = 0;
+					wstring e = qp;
+					if (qq[2] == '>' && qq[1] == '+') b = 1; //<+>
+					else if (check_if_num(qp, qq.substr(0, qq.find('>')) + L">") == L"") {
+						connect(out);
 						continue;
 					}
 
-					switch (qq[1]) {
-					case '@': //<@:> follow
-						if (qq[2] == ':' && qq[3] == '>') {
-							found_io = found_io_repeat;
-							follow = 0;
-							if (out_speed > 0) out_sleep = 0;
-							rei();
+					if (b) {}
+					else {
+						if (qq[2] != ':') { connect(out); continue; }
+						switch (qq[1]) {
+						case'+': multi_.icp_ += stod(qp); break; // <+:>
+						case'-': multi_.icp_ -= stod(qp); break;
+						case'*': multi_.icp_ *= stod(qp); break;
+						case'/':
+						case'%': if (stoi(qp) <= 0) { printq(); continue; }
+								int x = (int)multi_.icp_; if (qq[1] == '/')
+									multi_.icp_ /= stod(qp);
+								else multi_.icp_ = x % stoi(qp);
 						}
-						else connect(out);
-						break;
-					case ':':
-						if (qqb(L"<:")) { //cout
-							showOutsMsg(L"", qp, L"", 1);
-							rei();
-							break;
-						}
-						else connect(out);
-						break;
-					case '#':
-						if (qqb(L"<#:")) { //ascii_calc
-							if (qp.find('\\') != string::npos) qp = regex_replace(qp, wregex(L"\\\\g"), L">");
-							int s{}; for (auto& x : qp) s += x;
-							auto q = to_wstring(s);	cbSet(q);
-							rei();
-						}
-						else connect(out);
-						break;
-					case '!':
-						if (qqb(L"<!:")) { //set strand
-							strand = qp;
-							prints();
-							return;
-						}
-						else if (qqb(L"<!!:") || qqb(L"<!!!:")) { //set repeat
-							wstring v = qq.substr(qq.find(':') + 1);
-							v = v.substr(0, v.find('>'));
-							if (qq[qq.find(':') + 1] != '<')
-								num_error(L"Not a link", v, L"VALUE:");
-							else {
-								if (qq[3] == '!') { multi_.store_ = out; multi_.qq_ = qq; } //!!!
-								qq = v;
-								v = connect(v, 1);
-								if (!v[0]) {
-									kb(VK_BACK);
-									sleep(frequency / 2);
-									num_error(L"No output", qq, L"VALUE:");
-								}
-								else {
-									repeats = v;
-
-									if (multi_.store_[0]) { //!!! run
-										multi_.c_ = c;
-										repeat();
-										sleep(1);
-										out = multi_.store_.substr(multi_.c_);
-										c = 0;
-									}
-
-									qq = out;
-									rei();
-								}
-							}
-						}
-						else connect(out);
-						break;
-					case '~':
-						if (qqb(L"<~>")) {//manual set xy
-							POINT pt; GetCursorPos(&pt); qxcc = pt.x; qycc = pt.y; rei();
-						}
-						else if (qqb(L"<~~>")) {//manual return xy
-							SetCursorPos(qxcc, qycc); rei();
-						}
-						else connect(out);
-						break;
-					case'+': //calc
-					case'-':
-					case'*':
-					case'/':
-					case'%':
-						if (qq[2] == '>' || qq[3] != '>') { //<+:>
-							if (qq[3] == ' ') { //<+: #>
-								wstring cb = cbGet();
-								wstring e = cb;
-								if (!e[0] || check_if_num(e, L"clipboard") == L"") { connect(out); continue; }
-								multi_.icp_ = stod(cb);
-							}
-
-							bool b = 0;
-							wstring e = qp;
-							if (qq[2] == '>' && qq[1] == '+') b = 1; //<+>
-							else if (check_if_num(qp, qq.substr(0, qq.find('>')) + L">") == L"") {
-								connect(out);
-								continue;
-							}
-
-							if (b) {}
-							else {
-								if (qq[2] != ':') { connect(out); continue; }
-								switch (qq[1]) {
-								case'+': multi_.icp_ += stod(qp); break; // <+:>
-								case'-': multi_.icp_ -= stod(qp); break;
-								case'*': multi_.icp_ *= stod(qp); break;
-								case'/':
-								case'%': if (stoi(qp) <= 0) { printq(); continue; }
-									   int x = (int)multi_.icp_; if (qq[1] == '/')
-										   multi_.icp_ /= stod(qp);
-									   else multi_.icp_ = x % stoi(qp);
-								}
-							}
-
-							static bool dp;
-							if (qp.find('.') != string::npos || qq[3] == ' ' && cbGet().find('.') != string::npos) dp = 1; else { if (!b) dp = 0; }
-
-							wstring x = to_wstring(multi_.icp_);
-							if (!dp || qq[1] == '%') x = x.substr(0, x.find(L"."));
-
-							if (qq[3] == ' ') cbSet(x);
-
-							if (b) {
-								out = x + qq.substr(qq.find('>') + 1);
-								c = -1;
-								if (out_speed > 0) out_sleep = 0;
-								ic = multi_.icp_;
-							}
-							else rei();
-						}
-						else connect(out);
-						break;
-					case ',':
-						if (qqb(L"<,")) { //<,#>
-							unsigned long n = 1, ms;
-							setQxQy(qp); //# #
-							if (qy[0]) { //<,1000 4>
-								if (check_if_num(qy, L"<,# #>") == L"") return;
-								n = stoul(qy);
-								if (check_if_num(qx, L"<,#>") == L"" || n == 0) return;
-								ms = stoul(qx);
-							}
-							else { //<,1000>
-								if (!qp[0]) ms = frequency; //default <,>
-								else if (check_if_num(qp, L"<,#>") == L"") return;
-								else ms = stoul(qp);
-							}
-
-							multi_sleep(multi_, ms, n);
-							rei();
-						}
-						else connect(out);
-						break;
-					case'\'':
-						if (qqb(L"<'")) { //<'comments>
-							if (qq[2] == '\'') { c = out.length(); break; }//<''ignore>...
-							else if (qq[2] != ' ' && show_strand) {
-								showOutsMsg(L"", qp, L"", 1);
-								cout << '\n';
-							}
-							rei();
-							out_sleep = 0;
-							break;
-						}
-						else connect(out);
-						break;
-					case'a':
-					case 'A':
-						switch (qq[2]) {
-						case 'l':
-							if (qqb(L"<alt>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LMENU); rei(); }
-							else if (qqb(L"<alt->")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LMENU); rei(); }
-							else if (qqb(L"<alt")) kb_press(L"<alt", VK_LMENU);
-							else connect(out);
-							break;
-						case 'p':
-							if (qqb(L"<app>")) {//app title to cb
-								wstring a(getAppT());
-								cbSet(a);
-								rei();
-							}
-							else connect(out);
-							break;
-						case 'u':
-							if (qqb(L"<Audio:") || qqb(L"<audio:")) {
-								if (qq[1] == 'A') sndPlaySoundW((qp).c_str(), SND_FILENAME | SND_ASYNC); else mciSendStringW((qp).c_str(), 0, 0, 0); //<audio:play test.mp3>
-								rei();
-							}
-							else connect(out);
-							break;
-						default:
-							connect(out);
-						}
-						break;
-					case'b':
-						if (qqb(L"<bs")) kb_press(L"<bs", VK_BACK);
-						else connect(out);
-						break;
-					case'c':
-						switch (qq[2]) {
-						case 'l':
-							if (qqb(L"<cl>")) { wstring l = cbGet(); l = to_wstring(l.length()); cbSet(l); rei(); }
-							else connect(out);
-							break;
-						case 't':
-							if (qqb(L"<ctrl>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_CONTROL); rei(); }
-							else if (qqb(L"<ctrl->")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_CONTROL); rei(); }
-							else if (qqb(L"<ctrl")) kb_press(L"<ctrl", VK_CONTROL);
-							else connect(out);
-							break;
-						case 'b': //<cb> <cb:> <cb+:> <cb-:>
-							if (qq[3] == '>' || qp[0] && (chk == L"<cb:" || chk == L"<cb+:" || chk == L"<cb-:")) {
-								if (qp[0]) {
-									wstring _ = chk.substr(3);
-									if (_ == L"+:" || _ == L"-:") {
-										auto x = cbGet();
-										if (_[0] == '+')
-											qp = x + qp;
-										else if (_[0] == '-')
-											qp += x;
-									}
-									cbSet(qp);
-								}
-								else { kb_hold(VK_CONTROL); kb('v'); kb_release(VK_CONTROL); }
-								rei();
-							}
-							else connect(out);
-							break;
-						case 'a':
-							if (qqb(L"<caps")) kb_press(L"<caps", VK_CAPITAL);
-							else connect(out);
-							break;
-						default:
-							connect(out);
-						}
-						break;
-					case'd':
-					case'D':
-						switch (qq[2]) {
-						case 'B':
-						case 'b':
-							if (qqb(L"<db:")) {//.h Database:
-								qp = regex_replace(qp, wregex(L"/"), L"\\");
-								wifstream f(qp); if (!f) { f.close(); showOutsMsg(L"", L"\\n\\4Database \\7\\0C\\" + qp + L"\\0C\\\\4 not found!\\7\\n", L"", 1); return; } f.close();
-								rei();
-								//append db
-								wstring _ = database;
-								database = qp;
-								make_vdb_table();
-								database = _;
-								break;
-							}
-							else if (qqb(L"<db>") || qqb(L"<DB>")) {
-								if (qq[1] == 'D') {
-									vstrand.clear(); vstrand_out.clear(); make_vdb_table();
-								}
-								else {
-									for (size_t i = 0; i < vstrand.size(); ++i) {
-										wstring in_ = vstrand.at(i).in[0] && vstrand.at(i).in[vstrand.at(i).in.length() - 1] == '>' ? L"" : vstrand.at(i).g;
-										wcout << i + 1 << L": " << vstrand.at(i).in << in_ << vstrand_out.at(i).out << L"\n";
-									}
-									show_fg();
-								}
-								rei();
-							}
-							else connect(out);
-							break;
-						case 'o':
-							if (qqb(L"<down")) kb_press(L"<down", VK_DOWN);
-							else connect(out);
-							break;
-						case 'n':
-							if (qqb(L"<dna:")) {
-								if (npos_find(qp, '\\', 1)) qp = regex_replace(qp, wregex(L"\\\\\\\\\\\\\\\\g"), L">"); // \\\\g
-								HWND h = GetConsoleWindow(); SetConsoleTitleW(qp.c_str()); rei();
-							}
-							else connect(out);
-							break;
-						case 'e':
-							if (qqb(L"<delete")) kb_press(L"<delete", VK_DELETE);
-							else connect(out);
-							break;
-						default:
-							connect(out);
-						}
-						break;
-					case'e':
-						switch (qq[3]) {
-						case 't':
-							if (qqb(L"<enter")) kb_press(L"<enter", VK_RETURN);
-							else connect(out);
-							break;
-						case 'd':
-							if (qqb(L"<end")) kb_press(L"<end", VK_END);
-							else connect(out);
-							break;
-						case 'c':
-							if (qqb(L"<esc")) kb_press(L"<esc", VK_ESCAPE);
-							else connect(out);
-							break;
-						default:
-							connect(out);
-						}
-						break;
-					case'f':
-						switch (qq[2]) {
-						case '1':
-							if (qqb(L"<f10")) kb_press(L"<f10", VK_F10);
-							else if (qqb(L"<f11")) kb_press(L"<f11", VK_F11);
-							else if (qqb(L"<f12")) kb_press(L"<f12", VK_F12);
-							else if (qqb(L"<f1")) kb_press(L"<f1", VK_F1);
-							else connect(out);
-							break;
-						case '2':
-							if (qqb(L"<f2")) kb_press(L"<f2", VK_F2);
-							else connect(out);
-							break;
-						case '3':
-							if (qqb(L"<f3")) kb_press(L"<f3", VK_F3);
-							else connect(out);
-							break;
-						case '4':
-							if (qqb(L"<f4")) kb_press(L"<f4", VK_F4);
-							else connect(out);
-							break;
-						case '5':
-							if (qqb(L"<f5")) kb_press(L"<f5", VK_F5);
-							else connect(out);
-							break;
-						case '6':
-							if (qqb(L"<f6")) kb_press(L"<f6", VK_F6);
-							else connect(out);
-							break;
-						case '7':
-							if (qqb(L"<f7")) kb_press(L"<f7", VK_F7);
-							else connect(out);
-							break;
-						case '8':
-							if (qqb(L"<f8")) kb_press(L"<f8", VK_F8);
-							else connect(out);
-							break;
-						case '9':
-							if (qqb(L"<f9")) kb_press(L"<f9", VK_F9);
-							else connect(out);
-							break;
-						default:
-							connect(out);
-						}
-						break;
-					case'h':
-						if (qqb(L"<home")) kb_press(L"<home", VK_HOME);
-						else connect(out);
-						break;
-					case'i':
-						switch (qq[2]) {
-						case 'f':
-							{
-							bool _{};
-							{
-								wstring cmd{ qq.substr(3, qq.find(':') - 2) };
-
-								switch (qq[3]) {
-								case 'a':
-								case 'A':
-									if (cmd == L"app~:" || cmd == L"app:" || cmd == L"App:") _ = 1;
-									break;
-								case 'r':
-									if (cmd == L"rgb~:" || cmd == L"rgb:") _ = 1;
-									break;
-								case 'x': //qqb(L"<ifxy") || qqb(L"<ifcb")
-								case 'c':
-									if (qp[0] && chk == qq.substr(0, chk.length())) _ = 1;
-									break;
-								}
-							}
-							if (_) {
-#pragma region ifinit
-								if (!qp[0]) { connect(out); break; }
-
-								wstring t{};
-								wstring a{};
-								wstring x{};
-								wstring ms{};
-								wstring tf{};
-								wstring tf_T{};
-								wstring tf_F{};
-								wstring tf_feedback{};
-								wstring R{}, G{}, B{}, X{}, Y{};
-
-								unsigned short slash_pipes = 0;
-								unsigned short slash_ands = 0;
-								unsigned short slash_commas = 0;
-								unsigned short ands = 0;
-								unsigned short commas = 0;
-								unsigned short pipes = 0;
-								unsigned short spaces = 0;
-
-								bool sleeper_tick{}; //last ' for final sleep. <ifapp~:...'>
-								bool tf_T_link{}; //x:
-								bool tf_F_link{};
-								bool tf_T_link_plus_connect{}; //<x:
-								bool tf_F_link_plus_connect{};
-								bool tf_T_continue{}; //<
-								bool tf_F_continue{};
-								bool tf_F_retry{}; // ,
-								bool tf_loop{}; // : -
-
-								if (qp.substr(qp.length() - 1, 1) == L"'") {
-									sleeper_tick = 1;
-									qp.pop_back();
-								}
-
-								t = qp;
-
-								for (size_t i = 0; i < qp.length(); ++i)
-								{
-									if (qp.length() == 1) break;
-									if (qp[i] == ',') {
-										if (qp[i - 1] == '\\') {
-											++slash_commas;
-											continue;
-										}
-										++commas;
-										continue;
-									}
-									if (qp[i] == '|') {
-										if (qp[i - 1] == '\\') {
-											++slash_pipes;
-											continue;
-										}
-										++pipes;
-										continue;
-									}
-									if (qp[i] == '&') {
-										if (qp[i - 1] == '\\') {
-											++slash_ands;
-											continue;
-										}
-										++ands;
-										continue;
-									}
-								}
-
-								for (size_t i = 0; i <= slash_commas; ++i, t = t.substr(t.find(',') + 1))
-								{
-									if (!commas && i == slash_commas) { t = qp; break; }
-								}
-
-								//		<app: db.txt, 1, 1000 4, t: f:>
-								//set	<app: a,	  x, ms   n,  tf  >
-								if (!a[0]) {
-									a = qp.substr(0, qp.length() - t.length() - 1);
-									//set default loop <app:a,>
-									if (commas == 1) { tf_loop = 1; ms = to_wstring(frequency * 4); x = L"1"; }
-									//set <app:'feedback'a,>
-									if (a[0] == '\'') {
-										tf_feedback = a.substr(1);
-										if (npos_find(tf_feedback, '\'', 1)) {
-											tf_feedback = tf_feedback.substr(0, tf_feedback.find('\''));
-											a = a.substr(tf_feedback.length() + 2);
-										}
-										else {
-											tf_feedback = L"'";
-											a = a.substr(tf_feedback.length());
-										}
-									}
-								}
-								if (!x[0] && commas) { x = t.substr(0, t.find(',')); t = t.substr(t.find(',') + 1); if (x[0] == ' ') x = x.substr(1); }
-								if (!ms[0] && commas > 1) { ms = t.substr(0, t.find(',')); t = t.substr(t.find(',') + 1); if (ms[0] == ' ') ms = ms.substr(1); }
-								if (!tf[0] && commas > 2) {
-									tf = t; if (tf[0] == ' ') tf = tf.substr(1); // set
-
-									if (tf[0] && npos_find(tf, ' ', 1)) { //t: f: slot
-										tf_T = tf.substr(0, tf.find(' '));
-										tf_F = tf.substr(tf.find(' ') + 1);
-
-										//lint x:
-										if (tf_T.length() >= 1 && (npos_find(tf_T, '!', 1) || npos_find(tf_T, '^', 1) || npos_find(tf_T, ':', 1) || npos_find(tf_T, '-', 1))) {
-											//link_plus_connect <x:
-											if (tf_T[0] == '<')
-												tf_T_link_plus_connect = 1;
-											else
-												tf_T_link = 1;
-										}
-										if (tf_F.length() >= 1 && (npos_find(tf_F, '!', 1) || npos_find(tf_F, '^', 1) || npos_find(tf_F, ':', 1) || npos_find(tf_F, '-', 1))) {
-											if (tf_F[0] == '<')
-												tf_F_link_plus_connect = 1;
-											else
-												tf_F_link = 1;
-										}
-
-										//continue <
-										if (tf_T == L"<") tf_T_continue = 1;
-										if (tf_F == L"<") tf_F_continue = 1;
-
-										//retry ,
-										if (tf_F == L",") tf_F_retry = 1;
-
-									}
-									else if (tf == L":" || tf == L"-" || !tf[0])
-										tf_loop = 1;
-									else if (tf == L"<")
-										tf_F_continue = 1; //single tf_F continue
-									else if (tf.length() >= 1 && (npos_find(tf, '!', 1) || npos_find(tf, '^', 1) || npos_find(tf, ':', 1) || npos_find(tf, '-', 1))) {
-										if (tf[0] == '<') //single tf_F case
-											tf_F_link_plus_connect = 1;
-										else
-											tf_F_link = 1;
-									}
-
-									//if (debug == 1) {
-									//	wcout << tf << " tf\n";
-									//	cout << tf_loop << " tf_loop\n";
-									//	cout << tf_T_link << " tf_T_link\n";
-									//	cout << tf_F_link << " tf_F_link\n";
-									//	cout << tf_T_link_plus_connect << " tf_T_link_plus_connect\n";
-									//	cout << tf_F_link_plus_connect << " tf_F_link_plus_connect\n";
-									//	cout << tf_T_continue << " tf_T_continue\n";
-									//	cout << tf_F_continue << " tf_F_continue\n";
-									//	cout << tf_F_retry << " tf_F_retry\n";
-									//}
-								}
-
-								if (a.find('\\') != string::npos) {
-									a = regex_replace(a, wregex(L"\\\\,"), L","); // \,
-									a = regex_replace(a, wregex(L"\\\\\\\\\\\\\\\\g"), L">"); // \\\\g
-								}
-
-								vector<wstring>p{};
-								if (pipes) {
-									t = a;
-									t = regex_replace(t, wregex(L"[\\s][\\\\\\|][\\s]"), L"|");
-									if (slash_pipes) t = regex_replace(t, wregex(L"\\\\\\|"), L"  ");
-
-									for (unsigned short i = 0; i < pipes + 1; ++i)
-									{
-										wstring v = t.substr(0, t.find('|'));
-										if (slash_pipes) v = regex_replace(v, wregex(L"  "), L"|");
-										p.push_back(v);
-										t = t.substr(t.find('|') + 1);
-									}
-
-								}
-								else if (ands) {
-									t = a;
-									t = regex_replace(t, wregex(L"[\\s][&][\\s]"), L"&");
-									if (slash_ands) t = regex_replace(t, wregex(L"[\\&]"), L"  ");
-
-									for (unsigned short i = 0; i < ands + 1; ++i)
-									{
-										wstring v = t.substr(0, t.find('&'));
-										if (slash_ands) v = regex_replace(v, wregex(L"  "), L"&");
-										p.push_back(v);
-										t = t.substr(t.find('&') + 1);
-									}
-
-								}
-								else p.push_back(a);
-
-								unsigned long x_times{};
-								if (x[0]) {
-									if (check_if_num(x, L"* slot") == L"")
-										break;
-									else x_times = stoul(x);
-								}
-								else x_times = 1;
-
-								unsigned long ms_milliseconds{}, n = 1;
-								if (ms[0]) {
-									if (npos_find(ms, ' ', 1)) { //set ms_milliseconds
-										t = ms.substr(0, ms.find(' ')); //1000 4
-										if (check_if_num(t) == L"") { num_error(L"ms slot", t); break; }
-										else ms_milliseconds = stoul(t);
-										t = ms.substr(ms.find(' ') + 1);
-										if (check_if_num(t) == L"") { num_error(L"ms n slot", t); break; }
-										else n = stoul(t);
-									}
-									else
-										if (check_if_num(ms, L"ms slot") == L"") break;
-										else ms_milliseconds = stoul(ms);
-								}
-								else ms_milliseconds = 0;
-#pragma endregion
-								//<if inits
-								if (qq[3] == 'r') {
-									for (size_t i = 0; i < a.length(); ++i)
-										if (a[i] == ' ') ++spaces;
-								}
-
-								unsigned short count = 0;
-
-								for (size_t i = 0; i < x_times; ++i)
-								{
-									if_esc();
-									if (pause) if_pause();
-									if (stop) break;
-
-									if (tf_loop || tf_F_retry) ++x_times;
-
-									for (size_t j = 0; j < p.size(); ++j)
-									{
-										if (p[j] == L"") {
-											wstring e = qq.substr(0, 6) + L"> \\4NO VALUE FOUND. \\7USE ONE "; e += pipes ? L"|\\n" : L"&\\n"; showOutsMsg(L"", e, L"", 1);
-											stop = 1; break;
-										}
-
-										//if loops
-										switch (qq[3]) {
-											case 'a':
-											case 'A': {
-												HWND h = FindWindowW(0, p[j].c_str());
-
-												if (qq[3] == 'A') { //ifApp
-													if (GetForegroundWindow() == h) ++count;
-												}
-												else if (qq[3] == 'a') { //ifapp
-													DWORD pid{};
-													GetWindowThreadProcessId(h, &pid);
-													if (h) {
-														if (IsIconic(h)) { ShowWindow(h, SW_RESTORE); ShowWindow(h, SWP_SHOWWINDOW); }
-														if (qq[6] == '~') SetForegroundWindow(h); //ifapp~
-														++count;
-													}
-												}
-												break;
-											}
-											case 'r': {
-												R = L"", G = L"", B = L"", X = L"", Y = L"";
-												t = L" " + p[j];
-												for (unsigned short i = 0; i < spaces + 1; ++i) {
-													t = t.substr(t.find(' ') + 1);
-													if (!R[0]) { R = t.substr(0, t.find(' ')); continue; }
-													if (!G[0]) { G = t.substr(0, t.find(' ')); continue; }
-													if (!B[0]) { B = t.substr(0, t.find(' ')); continue; }
-													if (!X[0]) { X = t.substr(0, t.find(' ')); continue; }
-													if (!Y[0]) { Y = t; break; }
-												}
-												//if (debug == 1) {
-												//	t = R + G + B + X + Y;
-												//	t = regex_replace(a, wregex(L"-"), L"");
-												//	if (check_if_num(t, L"CHECK RGBXY slot") != L"") { stop = 1; break; }
-												//}
-
-												COLORREF color;
-												HDC hDC;
-												hDC = GetDC(NULL);
-
-												if (X[0] && Y[0]) {
-													if (X[0] == '.' || Y[0] == '.') {
-														POINT pt; GetCursorPos(&pt);
-														if (X[0] == '.') { X = to_wstring(pt.x); }
-														if (Y[0] == '.') { Y = to_wstring(pt.y); }
-													}
-													color = GetPixel(hDC, int(stoi(X) * RgbScaleLayout), int(stoi(Y) * RgbScaleLayout));
-												}
-												else { POINT pt; GetCursorPos(&pt); color = GetPixel(hDC, int(pt.x * RgbScaleLayout), int(pt.y * RgbScaleLayout)); }
-												ReleaseDC(NULL, hDC);
-												if (color != CLR_INVALID
-													&& GetRValue(color) == stoi(R)
-													&& GetGValue(color) == stoi(G)
-													&& GetBValue(color) == stoi(B))
-													++count; //&
-										
-												break;
-											}
-											case 'x': {
-												auto q = p[j].find(' ');
-												auto x = p[j].substr(0, q), y = p[j].substr(q + 1);
-												POINT pt; GetCursorPos(&pt);
-												if (x == L".") x = to_wstring(pt.x);
-												if (y == L".") y = to_wstring(pt.y);
-												auto tx = stoi(x), ty = stoi(y);
-
-												switch (qq[5]) {
-													case ':': //== <ifxy:> <ifxy=:> <ifxye:>
-													case '=':
-													case 'e': {
-														if (pt.x == tx && pt.y == ty) ++count;
-														break;
-													}
-													case 'n': //!= <ifxyn:> <ifxy!:>
-													case '!': {
-														if (pt.x != tx && pt.y != ty) ++count;
-														break;
-													}
-													case 'l'://<= <ifxyl:> <ifxyle:> <ifxy<:> <ifxy<=:>
-													case 'L':
-													case '<': {
-														if (qq[6] == 'e' || qq[6] == '=') { if (pt.x <= tx && pt.y <= ty) { ++count; break; } } //ifxyle <=
-														if (pt.x < tx && pt.y < ty) ++count;
-														break;
-													}
-													case 'g': { //>= <ifxyg:> <ifxyge:> <ifxyg=:>
-														if (qq[6] == 'e' || qq[6] == '=') { if (pt.x >= tx && pt.y >= ty) { ++count; break; } } //ifxyge >=/g=
-														if (pt.x > tx && pt.y > ty) ++count;
-														break;
-													}
-												}
-											
-												break;
-											}
-											case 'c': {
-												HANDLE hcb;
-												wchar_t* cb;
-												wstring w;
-
-												OpenClipboard(0);
-												hcb = GetClipboardData(CF_UNICODETEXT);
-												if (hcb != nullptr) {
-													cb = static_cast<wchar_t*>(GlobalLock(hcb));
-													if (cb != nullptr)
-														w = cb;
-												}
-												CloseClipboard();
-
-												switch (qq[5]) {
-													case ':': //== <ifcb:> <ifcb=:> <ifcbe:>
-													case '=':
-													case 'e':
-														if (w == p[j]) ++count;
-														break;
-													case 'A': //<if cb find y starting @ offset x: x y> | <ifcba:1 test>
-													case 'a': { //<if cb substring from index x matches y: x y> | <ifcbA:0 test>
-														auto x = p[j].substr(0, p[j].find(' ')), y = p[j].substr(p[j].find(' ') + 1);
-														if (qq[5] == 'A') {
-															auto s = stoi(x) - 1;
-															if (w.find(y, s) != wstring::npos)
-																++count;
-														}
-														else { //'a'
-															if (w.substr(stoi(x), y.length()) == y)
-																++count;
-														}
-														break;
-													}
-													case 'S': //if cb starts with | <ifcbS:test>
-														if (w.starts_with(p[j]))
-															++count;
-														break;
-													case 'E': //<ifcbE:>
-														if (w.ends_with(p[j]))
-															++count;
-														break;
-													case 'n': //!= <ifcbn:> <ifcb!:>
-													case '!':
-														if (w != p[j])
-															++count;
-														break;
-													case 'f': //<ifcbf:>
-														if (regex_search(w, wregex(p[j])))
-															++count;
-														break;
-													case 'F': //<ifcbF:>
-														if (w.find(p[j]) != string::npos)
-															++count;
-														break;
-													case 'l'://<= <ifcbl:> <ifcble:> <ifcb<:> <ifcb<=:> || <ifcblen:>
-													case 'L':
-													case '<': {
-														if (check_if_num(p[j], L"a slot") != L"" && check_if_num(w, L"clipboard") != L"") {
-															if (qq.substr(5, 3) == L"len") { //length <ifcblen:> <ifcbleng:>
-																unsigned short len = stoi(p[j]);
-																if (qq[8] == '!' || qq[8] == 'n') { if (w.length() != len) { ++count; break; } }
-																else if (qq.substr(8, 2) == L"ge" || qq.substr(8, 2) == L"g=") { if (w.length() >= len) { ++count; break; } }
-																else if (qq.substr(8) == L"g") { if (w.length() > len) { ++count; break; } }
-																else if (qq.substr(8, 2) == L"le" || qq.substr(8, 2) == L"<e" || qq.substr(8, 2) == L"<=") { if (w.length() <= len) { ++count; break; } }
-																else if (qq[8] == 'l' || qq[8] == '<') { if (w.length() < len) { ++count; break; } }
-																else if (qq[8] == ':' || qq[8] == 'e' || qq[8] == '=') { if (w.length() == len) ++count; break; }//==
-																else { p[j].clear(); ++count; break; }
-															}
-															if (qq[6] == 'e' || qq[6] == '=') { if (a == L"0" && w == L"0" || stod(w) <= stod(a)) { ++count; break; } } //ifcble <=
-															if (stod(w) < stod(a)) ++count;
-														}
-														else {
-															stop = 1;
-															c = out.length();
-														}
-														break;
-													}
-													case 'g': { //>= <ifcbg:> <ifcbge:> <ifcbg=:>
-														if (check_if_num(p[j], L"a slot") != L"" && check_if_num(w, L"clipboard") != L"") {
-															if (qq[6] == 'e' || qq[6] == '=') { if (p[j] == L"0" && w == L"0" || stod(w) >= stod(p[j])) { ++count; break; } } //ifcbge >=/g=
-															if (stod(w) > stod(p[j])) ++count;
-														}
-														break;
-													}
-												}
-
-												break;
-											}
-										}
-
-										if (stop) break;
-
-										if (ands ? count == p.size() : count) multi_.br_ = 1;
-										if (multi_.br_) break;
-
-									}
-
-									if (stop) break;
-
-									if (tf_feedback[0]) if (tf_feedback.length() > 1) showOutsMsg(L"", tf_feedback, L"", 1); else wcout << tf_feedback;
-
-									if (multi_.br_) {
-										if (sleeper_tick) multi_sleep(multi_, ms_milliseconds, n);
-										break;
-									}
-
-									ms_milliseconds = multi_.br_ || !tf_loop && x_times == i + 1 && !multi_.br_ ? 0 : ms_milliseconds;
-									multi_sleep(multi_, ms_milliseconds, n);
-
-								}
-
-								if (stop) { stop = 0; c = out.length(); break; }
-
-								if (qq[3] == 'r' && qq[6] == '~' && multi_.br_ && !stop && X[0] && Y[0]) {
-									POINT pt; GetCursorPos(&pt); qxcc = pt.x; qycc = pt.y;
-									SetCursorPos(stoi(X), stoi(Y));
-								}
-
-								if (tf_T[0] || tf_F[0] || tf[0] && !tf_F[0]) {
-									if (tf_T_continue && multi_.br_ || tf_F_continue && !multi_.br_ || tf_loop) { rei(); multi_.br_ = 0; break; }
-									tf_T = multi_.br_ ? tf_T : tf_F;
-									if (!tf_F[0]) tf_T = tf;//single tf !tf_F[0] case
-									tf_T = tf_T + L">";
-									if (tf_T_link && multi_.br_ || tf_F_link && !multi_.br_ || !tf_F[0] && tf_F_link) tf_T = L"<" + tf_T;
-									wstring l = qq.substr(qq.find('>') + 1);
-									qq = tf_T;
-									connect(tf_T);
-									out = tf_T_link_plus_connect && multi_.br_ || tf_F_link_plus_connect && !multi_.br_ || !tf_F[0] && tf_F_link_plus_connect ? tf_T + l : tf_T;
-									
-									multi_.br_ = 0;
-
-									break;
-								}
-
-								if (!multi_.br_) { c = out.length(); break; }
-
-								rei();
-
-								multi_.br_ = 0;
-
-							}
-							//qqb(L"<if+")
-							else if (qp[0] && chk == qq.substr(0, chk.length())) {//<if+:> | stop if <+>
-								wstring x = qp.substr(0, qp.find(' '));
-								if (check_if_num(x) == L"" || !qp[0]) { connect(out); break; }
-
-								bool b = 0; int q = stoi(qp.substr(0, qp.find(' ')));
-								wstring l = L""; if (qp.find(' ') != string::npos) l = qp.substr(qp.find(' ') + 1);//<if+:# true:>
-								switch (qq[4]) {
-								default:
-								case ':': //==
-								case 'e':
-								case '=':
-									if (multi_.icp_ == q) b = 1;
-									break;
-								case 'n': //!=
-								case '!':
-									if (multi_.icp_ != q) b = 1;
-									break;
-								case 'l': //<=
-								case 'L':
-								case '<':
-									if (qq[5] == '=' || qq[5] == 'e') {
-										if (qp <= to_wstring(multi_.icp_)) b = 1;
-									} //if+le <=
-									else {
-										if (multi_.icp_ < q) b = 1;
-									}
-									break;
-								case 'g': //g=
-									if (qq[5] == '=' || qq[5] == 'e') {
-										if (multi_.icp_ >= q) b = 1;
-									} //if+ge >=/g=
-									else {
-										if (multi_.icp_ > q) b = 1;
-									}
-								}
-								if (b) {
-									if (l > L"") {
-										if (l == L"<") { out = out.substr(out.find('>') + 1); }
-										else
-										out = l[0] == '<'
-											? l + L">" + qq.substr(qq.find('>') + 1)
-											: L"<" + l + L">";//<if+:# true->
-										if (out_speed > 0) out_sleep = 0;
-										c = -1; break;
-									}
-									c = out.length(); break;
-								}
-								else rei();
-							}
-							else connect(out);
-							}
-							break;
-						case 'n':
-							if (qqb(L"<ins")) kb_press(L"<ins", VK_INSERT);
-							else connect(out);
-							break;
-						default:
-							connect(out);
-						}
-						break;
-					case'l':
-						switch (qq[2]) {
-						case 'o': //lowercase cb
-							if (qqb(L"<lower>")) {
-								wstring s = L"", b = L"";
-								b = cbGet();
-								for (size_t x = 0; x < b.length(); ++x)
-									s += tolower(b[x]);
-								cbSet(s);
-								rei();
-							}
-							else connect(out);
-							break;
-						case 'c':
-							if (qqb(L"<lc"))
-								kb_press(L"<lc", VK_F7);//left click
-							else
-								connect(out);
-							break;
-						case 'h':
-							if (qqb(L"<lh>")) { //left hold
-								mouseEvent(MOUSEEVENTF_LEFTDOWN);
-								rei();
-							}
-							else
-								connect(out);
-							break;
-						case 'r':
-							if (qqb(L"<lr>")) { //left release
-								mouseEvent(MOUSEEVENTF_LEFTUP);
-								rei();
-							}
-							else
-								connect(out);
-							break;
-						case 'e':
-							if (qqb(L"<left"))
-								kb_press(L"<left", VK_LEFT);
-							else
-								connect(out);
-							break;
-						case 's':
-							if (qqb(L"<ls"))
-								kb_press(L"<ls", VK_F7); //hscroll+
-							else
-								connect(out);
-							break;
-						default:
-							connect(out);
-						}
-						break;
-					case'm':
-						switch (qq[2]) {
-						case 'l':
-							if (qqb(L"<ml>")) {//print multiLineDelimiter
-								wstring w = repeats;
-								run(utf8_to_wstring(delimiter));
-								repeats = w;
-								rei();
-								if (out_speed > 0) out_sleep = 0;
-							}
-							else connect(out);
-							break;
-						case 'c':
-							if (qqb(L"<mc")) kb_press(L"<mc", VK_F7);//middle click
-							else connect(out);
-							break;
-						case 'h':
-							if (qqb(L"<mh>")) {//middle hold
-								mouseEvent(MOUSEEVENTF_MIDDLEDOWN);
-								rei();
-							}
-							else connect(out);
-							break;
-						case 'r':
-							if (qqb(L"<mr>")) {//middle release
-								mouseEvent(MOUSEEVENTF_MIDDLEUP);
-								rei();
-							}
-							else connect(out);
-							break;
-						case 'e':
-							if (qqb(L"<menu")) kb_press(L"<menu", VK_APPS);
-							else connect(out);
-							break;
-						default:
-							connect(out);
-						}
-						break;
-					case'p':
-						switch (qq[2]) {
-						case 'a':
-							if (qqb(L"<pause")) { kb_press(L"<pause", VK_PAUSE); GetAsyncKeyState(VK_PAUSE); }
-							else connect(out);
-							break;
-						case 's':
-							if (qqb(L"<ps")) kb_press(L"<ps", VK_SNAPSHOT);
-							else connect(out);
-							break;
-						case 'u':
-							if (qqb(L"<pu")) kb_press(L"<pu", VK_PRIOR);//pgup
-							else connect(out);
-							break;
-						case 'd':
-							if (qqb(L"<pd")) kb_press(L"<pd", VK_NEXT);//pgdn
-							else connect(out);
-							break;
-						default:
-							connect(out);
-						}
-						break;
-					case'R':
-					case'r':
-						switch (qq[2]) {
-						case ':':
-							if (qqb(L"<R:") || qqb(L"<r:")) {//.h ReplacerDb:
-								if (qq[1] == 'R') showOutsMsg(L"", qp, L"\n", 0);
-								qp = regex_replace(qp, wregex(L"/"), L"\\");
-								replacerDb = qp;
-								rei();
-							}
-							else connect(out);
-							break;
-						case 'c':
-							if (qqb(L"<rc")) kb_press(L"<rc", VK_F7); else connect(out);
-							break;
-						case 'h':
-							if (qqb(L"<rh>")) {//right hold
-								mouseEvent(MOUSEEVENTF_RIGHTDOWN);
-								rei();
-							}
-							else connect(out);
-							break;
-						case 'r':
-							if (qqb(L"<rr>")) {//right release
-								mouseEvent(MOUSEEVENTF_RIGHTUP);
-								rei();
-							}
-							else connect(out);
-							break;
-						case 'i':
-							if (qqb(L"<right")) kb_press(L"<right", VK_RIGHT); else connect(out);
-							break;
-						case 's':
-							if (qqb(L"<rs")) { kb_press(L"<rs", VK_F7); }
-							else connect(out);//hscroll-
-							break;
-						case 'G':
-						case 'g':
-							if (qqb(L"<rgb")) {//print r g b x y | <rgb> <rgb 5000>
-								out = getRGB(qq[4] == '>' ? 1 : 2);
-								if (out[0]) c = -1;
-								if (out_speed > 0) out_sleep = 0;
-							}
-							else connect(out);
-							break;
-						case 'e':
-							if (qqb(L"<replace:")) {
-								if (cbGet() > L"") {
-									setQxQy(qp);
-									if (qp.find(L"\\,") != wstring::npos) {// \,
-										wstring t = qp.substr(qp.find_last_of(L"\\") + 2);
-										if (t.find(',') != string::npos) {
-											qx = qp.substr(0, qp.find_last_of(L"\\") + t.find(',') + 2);
-											qy = qp.substr(qx.length() + 1);
-											qx = regex_replace(qx, wregex(L"\\\\,"), L",");// \,
-										}
-									}
-									wstring d = utf8_to_wstring(delimiter);
-									qx = regex_replace(qx, wregex(L"\\\\g"), L">"); qx = regex_replace(qx, wregex(L"\\\\m"), d);
-									qy = regex_replace(qy, wregex(L"\\\\g"), L">"); qy = regex_replace(qy, wregex(L"\\\\m"), d);
-									wstring b = regex_replace(cbGet(), wregex(qx), qy);
-									cbSet(b);
-								}
-								rei();
-							}
-							else connect(out);
-							break;
-						default:
-							connect(out);
-						}
-						break;
-					case 's':
-					case 'S':
-						switch (qq[2]) {
-						case 'E':
-						case 'e':
-							if (qqb(L"<SE:") || qqb(L"<se:")) {//.h Switch Settings: file
-								qp = regex_replace(qp, wregex(L"/"), L"\\");
-								wifstream f(qp); if (!f) { f.close(); showOutsMsg(L"", L"\\n\\4Settings \\7\\0C\\" + qp + L"\\0C\\\\4 not found!\\7\\n", L"", 1); return; } f.close();
-								wstring t = settings, _ = database;
-								settings = qp;
-								if (qq[1] == 's') se = settings.substr(settings.find_last_of('\\') + 1) + L" - ";
-								load_settings();
-								if (qq[1] == 'S') settings = t;
-								if (_ != database)
-									mvdb = 1;
-								rei();
-								break;
-							}
-							else if (qqb(L"<se>") || qqb(L"<SE>")) { 
-								if (debug != 1) load_settings();
-								if (qq[1] == 's') {
-									printSe();
-									show_fg();
-								}
-								rei();
-							}
-							else connect(out);
-							break;
-						case 'h':
-							if (qqb(L"<shift>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LSHIFT); rei(); }
-							else if (qqb(L"<shift->")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LSHIFT); kb_release(VK_RSHIFT); rei(); }
-							else if (qqb(L"<shift")) kb_press(L"<shift", VK_LSHIFT);
-							else connect(out);
-							break;
-						case 'p':
-							if (qqb(L"<speed:")) {
-								if (check_if_num(qp, L"<speed: {slot}>") != L"") {
-									out_speed = stoi(qp); rei(); out_sleep = 0;
-								}
-								else printq();
-							}
-							else if (qqb(L"<space")) kb_press(L"<space", VK_SPACE);
-							else connect(out);
-							break;
-						case 'd':
-							if (qqb(L"<sd")) { kb_press(L"<sd", VK_F7); }//scroll down
-							else connect(out);
-							break;
-						case 'r':
-							if (qqb(L"<sr")) { kb_press(L"<sr", VK_F7); }//scroll right
-							else connect(out);
-							break;
-						case 'u':
-							if (qqb(L"<su")) { kb_press(L"<su", VK_F7); }//scroll up
-							else connect(out);
-							break;
-						case 'l':
-							if (qqb(L"<sl")) { kb_press(L"<sl", VK_F7); }//scroll left
-							else connect(out);
-							break;
-						default:
-							connect(out);
-						}
-						break;
-					case 't':
-						if (qqb(L"<tab")) kb_press(L"<tab", VK_TAB);
-						else if (qqb(L"<time>") || qqb(L"<time:")) {
-							wstring w{}; getTime(w);
-							if (qq[5] == '>') w = w.substr(w.rfind(L" ") - 8, 8);
-							out = w + qq.substr(qq.find('>') + 1, qq.length());
-							c = -1;
-							if (out_speed > 0) out_sleep = 0;
-						}
-						else connect(out);
-						break;
-					case 'u':
-						if (qqb(L"<upper>")) { wstring s = L"", c = L""; c = cbGet(); for (size_t x = 0; x < c.length(); ++x) { s += toupper(c[x]); } cbSet(s); rei(); }
-						else if (qqb(L"<up")) kb_press(L"<up", VK_UP);
-						else connect(out);
-						break;
-					case 'v':
-						if (qqb(L"<v>")) { toggle_visibility(); rei(); }
-						else connect(out);
-						break;
-					case 'w':
-						if (qqb(L"<win>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LWIN); rei(); }
-						else if (qqb(L"<win->")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LWIN); rei(); }
-						else if (qqb(L"<win")) kb_press(L"<win", VK_LWIN);
-						else connect(out);
-						break;
-					case 'x':
-						switch (qq[2]) {
-						case 'y':
-							if (qqb(L"<xy:") || qqb(L"<xy~:")) {
-								setQxQy(qp); //# #
-								if (delimiter[0] != '\n' && qx[0] == '\n' || qx[0] == '\t' || qy[0] == '\n' || qy[0] == '\t') {
-									qx = regex_replace(qx, wregex(L"\n"), L""); qx = regex_replace(qx, wregex(L"\t"), L"");
-									qy = regex_replace(qy, wregex(L"\n"), L""); qy = regex_replace(qy, wregex(L"\t"), L"");
-								}
-								if (qx[0] == '.' || qy[0] == '.' || qq[3] == '~') {//Use . for current pt | <xy:. 0>  <t-<ifxy:0 . | . 0 | . 864 | 1638 .,1,1000,:>1
-									POINT pt; GetCursorPos(&pt);
-									if (qq[3] == '~') { //<~~>
-										qxcc = pt.x;
-										qycc = pt.y;
-									}
-									
-									if (qx == L".")
-										qx = to_wstring(pt.x);
-									if (qy == L".")
-										qy = to_wstring(pt.y);
-									
-								}
-								SetCursorPos(stoi(qx), stoi(qy));
-								rei();
-							}
-							else if (qqb(L"<xy>")) {//print pointer
-								POINT pt; GetCursorPos(&pt);
-								out = to_wstring(pt.x) + L" " + to_wstring(pt.y) + qq.substr(qq.find('>') + 1, qq.length());
-								c = -1;
-								if (out_speed > 0) out_sleep = 0;
-							}
-							else connect(out);
-							break;
-						default:
-							connect(out);
-						}
-						break;
-					case 'y':
-						if (qqb(L"<yesno:")) {
-
-							wstring me = qp;
-
-							if (npos_find(qp, '\\', 1)) {
-								me = regex_replace(me, wregex(L"[\\\\][\\s]"), L"::s::");
-							}
-
-							auto qu = me.substr(0, me.find(' '));
-							me = me.substr(me.find(' ') + 1);
-
-							if (npos_find(qp, '\\', 1)) {
-								me = regex_replace(me, wregex(L"::s::"), L" ");
-								me = regex_replace(me, wregex(L"\\\\g"), L">");
-								me = regex_replace(me, wregex(L"\\\\n"), L"\n");
-								qu = regex_replace(qu, wregex(L"::s::"), L" ");
-								qu = regex_replace(qu, wregex(L"\\\\g"), L">");
-								qu = regex_replace(qu, wregex(L"\\\\n"), L"\n");
-							}
-
-							multi_.out_ = out;
-							multi_.qq_ = qq;
-							multi_.qp_ = qp;
-							multi_.c_ = c;
-
-							int m = MessageBoxW(0, me.c_str()
-								, qu.c_str()
-								, MB_YESNO);
-							if (m == IDYES) {
-								out = multi_.out_;
-								qq = multi_.qq_;
-								qp = multi_.qp_;
-								c = multi_.c_;
-								rei();
-								continue;
-							}
-							else {
-								c = out.length();
-								break;
-							}
-						}
-						else connect(out);
-						break;
-					default:
-						connect(out);
-					} //<x>
-					break;
-				default:
-				{
-					//if !"#$%& ()*+ : > ?&AZ ^ _ {|}~
-					if (out[c] == 58
-						|| out[c] < 91 && out[c] > 61
-						|| out[c] < 39 && out[c] > 32
-						|| out[c] == 95
-						|| out[c] < 44 && out[c] > 39
-						|| out[c] > 122 && out[c] < 127
-						|| out[c] == 94)
-					{
-						kb_hold(VK_LSHIFT);
-						hold_shift = 1;
 					}
 
-					kb(out[c]);
+					static bool dp;
+					if (qp.find('.') != string::npos || qq[3] == ' ' && cbGet().find('.') != string::npos) dp = 1; else { if (!b) dp = 0; }
 
-					if (hold_shift)
-						shift_release();
+					wstring x = to_wstring(multi_.icp_);
+					if (!dp || qq[1] == '%') x = x.substr(0, x.find(L"."));
 
+					if (qq[3] == ' ') cbSet(x);
+
+					if (b) {
+						out = x + qq.substr(qq.find('>') + 1);
+						c = -1;
+						if (out_speed > 0) out_sleep = 0;
+						ic = multi_.icp_;
+					}
+					else rei();
 				}
+				else connect(out);
+				break;
+			case ',':
+				if (qqb(L"<,")) { //<,#>
+					unsigned long n = 1, ms;
+					setQxQy(qp); //# #
+					if (qy[0]) { //<,1000 4>
+						if (check_if_num(qy, L"<,# #>") == L"") return;
+						n = stoul(qy);
+						if (check_if_num(qx, L"<,#>") == L"" || n == 0) return;
+						ms = stoul(qx);
+					}
+					else { //<,1000>
+						if (!qp[0]) ms = frequency; //default <,>
+						else if (check_if_num(qp, L"<,#>") == L"") return;
+						else ms = stoul(qp);
+					}
 
+					multi_sleep(multi_, ms, n);
+					rei();
 				}
+				else connect(out);
+				break;
+			case'\'':
+				if (qqb(L"<'")) { //<'comments>
+					if (qq[2] == '\'') { c = out.length(); break; }//<''ignore>...
+					else if (qq[2] != ' ' && show_strand) {
+						showOutsMsg(L"", qp, L"", 1);
+						cout << '\n';
+					}
+					rei();
+					out_sleep = 0;
+					break;
+				}
+				else connect(out);
+				break;
+			case'a':
+			case 'A':
+				switch (qq[2]) {
+				case 'l':
+					if (qqb(L"<alt>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LMENU); rei(); }
+					else if (qqb(L"<alt->")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LMENU); rei(); }
+					else if (qqb(L"<alt")) kb_press(L"<alt", VK_LMENU);
+					else connect(out);
+					break;
+				case 'p':
+					if (qqb(L"<app>")) {//app title to cb
+						wstring a(getAppT());
+						cbSet(a);
+						rei();
+					}
+					else connect(out);
+					break;
+				case 'u':
+					if (qqb(L"<Audio:") || qqb(L"<audio:")) {
+						if (qq[1] == 'A') sndPlaySoundW((qp).c_str(), SND_FILENAME | SND_ASYNC); else mciSendStringW((qp).c_str(), 0, 0, 0); //<audio:play test.mp3>
+						rei();
+					}
+					else connect(out);
+					break;
+				default:
+					connect(out);
+				}
+				break;
+			case'b':
+				if (qqb(L"<bs")) kb_press(L"<bs", VK_BACK);
+				else connect(out);
+				break;
+			case'c':
+				switch (qq[2]) {
+				case 'l':
+					if (qqb(L"<cl>")) { wstring l = cbGet(); l = to_wstring(l.length()); cbSet(l); rei(); }
+					else connect(out);
+					break;
+				case 't':
+					if (qqb(L"<ctrl>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_CONTROL); rei(); }
+					else if (qqb(L"<ctrl->")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_CONTROL); rei(); }
+					else if (qqb(L"<ctrl")) kb_press(L"<ctrl", VK_CONTROL);
+					else connect(out);
+					break;
+				case 'b': //<cb> <cb:> <cb+:> <cb-:>
+					if (qq[3] == '>' || qp[0] && (chk == L"<cb:" || chk == L"<cb+:" || chk == L"<cb-:")) {
+						if (qp[0]) {
+							wstring _ = chk.substr(3);
+							if (_ == L"+:" || _ == L"-:") {
+								auto x = cbGet();
+								if (_[0] == '+')
+									qp = x + qp;
+								else if (_[0] == '-')
+									qp += x;
+							}
+							cbSet(qp);
+						}
+						else { kb_hold(VK_CONTROL); kb('v'); kb_release(VK_CONTROL); }
+						rei();
+					}
+					else connect(out);
+					break;
+				case 'a':
+					if (qqb(L"<caps")) kb_press(L"<caps", VK_CAPITAL);
+					else connect(out);
+					break;
+				default:
+					connect(out);
+				}
+				break;
+			case'd':
+			case'D':
+				switch (qq[2]) {
+				case 'B':
+				case 'b':
+					if (qqb(L"<db:")) {//.h Database:
+						qp = regex_replace(qp, wregex(L"/"), L"\\");
+						wifstream f(qp); if (!f) { f.close(); showOutsMsg(L"", L"\\n\\4Database \\7\\0C\\" + qp + L"\\0C\\\\4 not found!\\7\\n", L"", 1); return; } f.close();
+						rei();
+						//db
+						wstring _ = database;
+						database = qp;
+						vstrand.clear(); vstrand_out.clear(); vstrand_map.clear(); make_vdb_table();
+						database = _;
+						break;
+					}
+					else if (qqb(L"<db>") || qqb(L"<DB>")) {
+						if (qq[1] == 'D') {
+							vstrand.clear(); vstrand_out.clear(); vstrand_map.clear(); make_vdb_table();
+						}
+						else {
+							for (size_t i = 0; i < vstrand.size(); ++i) {
+								wstring in_ = vstrand.at(i).in[0] && vstrand.at(i).in[vstrand.at(i).in.length() - 1] == '>' ? L"" : vstrand.at(i).g;
+								wcout << i + 1 << L": " << vstrand.at(i).in << in_ << vstrand_out.at(i).out << L"\n";
+							}
+							show_fg();
+						}
+						rei();
+					}
+					else connect(out);
+					break;
+				case 'o':
+					if (qqb(L"<down")) kb_press(L"<down", VK_DOWN);
+					else connect(out);
+					break;
+				case 'n':
+					if (qqb(L"<dna:")) {
+						if (npos_find(qp, '\\', 1)) qp = regex_replace(qp, wregex(L"\\\\\\\\\\\\\\\\g"), L">"); // \\\\g
+						HWND h = GetConsoleWindow(); SetConsoleTitleW(qp.c_str()); rei();
+					}
+					else connect(out);
+					break;
+				case 'e':
+					if (qqb(L"<delete")) kb_press(L"<delete", VK_DELETE);
+					else connect(out);
+					break;
+				default:
+					connect(out);
+				}
+				break;
+			case'e':
+				switch (qq[3]) {
+				case 't':
+					if (qqb(L"<enter")) kb_press(L"<enter", VK_RETURN);
+					else connect(out);
+					break;
+				case 'd':
+					if (qqb(L"<end")) kb_press(L"<end", VK_END);
+					else connect(out);
+					break;
+				case 'c':
+					if (qqb(L"<esc")) kb_press(L"<esc", VK_ESCAPE);
+					else connect(out);
+					break;
+				default:
+					connect(out);
+				}
+				break;
+			case'f':
+				switch (qq[2]) {
+				case '1':
+					if (qqb(L"<f10")) kb_press(L"<f10", VK_F10);
+					else if (qqb(L"<f11")) kb_press(L"<f11", VK_F11);
+					else if (qqb(L"<f12")) kb_press(L"<f12", VK_F12);
+					else if (qqb(L"<f1")) kb_press(L"<f1", VK_F1);
+					else connect(out);
+					break;
+				case '2':
+					if (qqb(L"<f2")) kb_press(L"<f2", VK_F2);
+					else connect(out);
+					break;
+				case '3':
+					if (qqb(L"<f3")) kb_press(L"<f3", VK_F3);
+					else connect(out);
+					break;
+				case '4':
+					if (qqb(L"<f4")) kb_press(L"<f4", VK_F4);
+					else connect(out);
+					break;
+				case '5':
+					if (qqb(L"<f5")) kb_press(L"<f5", VK_F5);
+					else connect(out);
+					break;
+				case '6':
+					if (qqb(L"<f6")) kb_press(L"<f6", VK_F6);
+					else connect(out);
+					break;
+				case '7':
+					if (qqb(L"<f7")) kb_press(L"<f7", VK_F7);
+					else connect(out);
+					break;
+				case '8':
+					if (qqb(L"<f8")) kb_press(L"<f8", VK_F8);
+					else connect(out);
+					break;
+				case '9':
+					if (qqb(L"<f9")) kb_press(L"<f9", VK_F9);
+					else connect(out);
+					break;
+				default:
+					connect(out);
+				}
+				break;
+			case'h':
+				if (qqb(L"<home")) kb_press(L"<home", VK_HOME);
+				else connect(out);
+				break;
+			case'i':
+				switch (qq[2]) {
+				case 'f':
+					{
+					bool _{};
+					{
+						wstring cmd{ qq.substr(3, qq.find(':') - 2) };
 
+						switch (qq[3]) {
+						case 'a':
+						case 'A':
+							if (cmd == L"app~:" || cmd == L"app:" || cmd == L"App:") _ = 1;
+							break;
+						case 'r':
+							if (cmd == L"rgb~:" || cmd == L"rgb:") _ = 1;
+							break;
+						case 'x': //qqb(L"<ifxy") || qqb(L"<ifcb")
+						case 'c':
+							if (qp[0] && chk == qq.substr(0, chk.length())) _ = 1;
+							break;
+						}
+					}
+					if (_) {
+#pragma region ifinit
+						if (!qp[0]) { connect(out); break; }
+
+						wstring t{};
+						wstring a{};
+						wstring x{};
+						wstring ms{};
+						wstring tf{};
+						wstring tf_T{};
+						wstring tf_F{};
+						wstring tf_feedback{};
+						wstring R{}, G{}, B{}, X{}, Y{};
+
+						unsigned short slash_pipes = 0;
+						unsigned short slash_ands = 0;
+						unsigned short slash_commas = 0;
+						unsigned short ands = 0;
+						unsigned short commas = 0;
+						unsigned short pipes = 0;
+						unsigned short spaces = 0;
+
+						bool sleeper_tick{}; //last ' for final sleep. <ifapp~:...'>
+						bool tf_T_link{}; //x:
+						bool tf_F_link{};
+						bool tf_T_link_plus_connect{}; //<x:
+						bool tf_F_link_plus_connect{};
+						bool tf_T_continue{}; //<
+						bool tf_F_continue{};
+						bool tf_F_retry{}; // ,
+						bool tf_loop{}; // : -
+
+						if (qp.substr(qp.length() - 1, 1) == L"'") {
+							sleeper_tick = 1;
+							qp.pop_back();
+						}
+
+						t = qp;
+
+						for (size_t i = 0; i < qp.length(); ++i)
+						{
+							if (qp.length() == 1) break;
+							if (qp[i] == ',') {
+								if (qp[i - 1] == '\\') {
+									++slash_commas;
+									continue;
+								}
+								++commas;
+								continue;
+							}
+							if (qp[i] == '|') {
+								if (qp[i - 1] == '\\') {
+									++slash_pipes;
+									continue;
+								}
+								++pipes;
+								continue;
+							}
+							if (qp[i] == '&') {
+								if (qp[i - 1] == '\\') {
+									++slash_ands;
+									continue;
+								}
+								++ands;
+								continue;
+							}
+						}
+
+						for (size_t i = 0; i <= slash_commas; ++i, t = t.substr(t.find(',') + 1))
+						{
+							if (!commas && i == slash_commas) { t = qp; break; }
+						}
+
+						//		<app: db.txt, 1, 1000 4, t: f:>
+						//set	<app: a,	  x, ms   n,  tf  >
+						if (!a[0]) {
+							a = qp.substr(0, qp.length() - t.length() - 1);
+							//set default loop <app:a,>
+							if (commas == 1) { tf_loop = 1; ms = to_wstring(frequency * 4); x = L"1"; }
+							//set <app:'feedback'a,>
+							if (a[0] == '\'') {
+								tf_feedback = a.substr(1);
+								if (npos_find(tf_feedback, '\'', 1)) {
+									tf_feedback = tf_feedback.substr(0, tf_feedback.find('\''));
+									a = a.substr(tf_feedback.length() + 2);
+								}
+								else {
+									tf_feedback = L"'";
+									a = a.substr(tf_feedback.length());
+								}
+							}
+						}
+						if (!x[0] && commas) { x = t.substr(0, t.find(',')); t = t.substr(t.find(',') + 1); if (x[0] == ' ') x = x.substr(1); }
+						if (!ms[0] && commas > 1) { ms = t.substr(0, t.find(',')); t = t.substr(t.find(',') + 1); if (ms[0] == ' ') ms = ms.substr(1); }
+						if (!tf[0] && commas > 2) {
+							tf = t; if (tf[0] == ' ') tf = tf.substr(1); // set
+
+							if (tf[0] && npos_find(tf, ' ', 1)) { //t: f: slot
+								tf_T = tf.substr(0, tf.find(' '));
+								tf_F = tf.substr(tf.find(' ') + 1);
+
+								//lint x:
+								if (tf_T.length() >= 1 && (npos_find(tf_T, '!', 1) || npos_find(tf_T, '^', 1) || npos_find(tf_T, ':', 1) || npos_find(tf_T, '-', 1))) {
+									//link_plus_connect <x:
+									if (tf_T[0] == '<')
+										tf_T_link_plus_connect = 1;
+									else
+										tf_T_link = 1;
+								}
+								if (tf_F.length() >= 1 && (npos_find(tf_F, '!', 1) || npos_find(tf_F, '^', 1) || npos_find(tf_F, ':', 1) || npos_find(tf_F, '-', 1))) {
+									if (tf_F[0] == '<')
+										tf_F_link_plus_connect = 1;
+									else
+										tf_F_link = 1;
+								}
+
+								//continue <
+								if (tf_T == L"<") tf_T_continue = 1;
+								if (tf_F == L"<") tf_F_continue = 1;
+
+								//retry ,
+								if (tf_F == L",") tf_F_retry = 1;
+
+							}
+							else if (tf == L":" || tf == L"-" || !tf[0])
+								tf_loop = 1;
+							else if (tf == L"<")
+								tf_F_continue = 1; //single tf_F continue
+							else if (tf.length() >= 1 && (npos_find(tf, '!', 1) || npos_find(tf, '^', 1) || npos_find(tf, ':', 1) || npos_find(tf, '-', 1))) {
+								if (tf[0] == '<') //single tf_F case
+									tf_F_link_plus_connect = 1;
+								else
+									tf_F_link = 1;
+							}
+
+							//if (debug == 1) {
+							//	wcout << tf << " tf\n";
+							//	cout << tf_loop << " tf_loop\n";
+							//	cout << tf_T_link << " tf_T_link\n";
+							//	cout << tf_F_link << " tf_F_link\n";
+							//	cout << tf_T_link_plus_connect << " tf_T_link_plus_connect\n";
+							//	cout << tf_F_link_plus_connect << " tf_F_link_plus_connect\n";
+							//	cout << tf_T_continue << " tf_T_continue\n";
+							//	cout << tf_F_continue << " tf_F_continue\n";
+							//	cout << tf_F_retry << " tf_F_retry\n";
+							//}
+						}
+
+						if (a.find('\\') != string::npos) {
+							a = regex_replace(a, wregex(L"\\\\,"), L","); // \,
+							a = regex_replace(a, wregex(L"\\\\\\\\\\\\\\\\g"), L">"); // \\\\g
+						}
+
+						vector<wstring>p{};
+						if (pipes) {
+							t = a;
+							t = regex_replace(t, wregex(L"[\\s][\\\\\\|][\\s]"), L"|");
+							if (slash_pipes) t = regex_replace(t, wregex(L"\\\\\\|"), L"  ");
+
+							for (unsigned short i = 0; i < pipes + 1; ++i)
+							{
+								wstring v = t.substr(0, t.find('|'));
+								if (slash_pipes) v = regex_replace(v, wregex(L"  "), L"|");
+								p.push_back(v);
+								t = t.substr(t.find('|') + 1);
+							}
+
+						}
+						else if (ands) {
+							t = a;
+							t = regex_replace(t, wregex(L"[\\s][&][\\s]"), L"&");
+							if (slash_ands) t = regex_replace(t, wregex(L"[\\&]"), L"  ");
+
+							for (unsigned short i = 0; i < ands + 1; ++i)
+							{
+								wstring v = t.substr(0, t.find('&'));
+								if (slash_ands) v = regex_replace(v, wregex(L"  "), L"&");
+								p.push_back(v);
+								t = t.substr(t.find('&') + 1);
+							}
+
+						}
+						else p.push_back(a);
+
+						unsigned long x_times{};
+						if (x[0]) {
+							if (check_if_num(x, L"* slot") == L"")
+								break;
+							else x_times = stoul(x);
+						}
+						else x_times = 1;
+
+						unsigned long ms_milliseconds{}, n = 1;
+						if (ms[0]) {
+							if (npos_find(ms, ' ', 1)) { //set ms_milliseconds
+								t = ms.substr(0, ms.find(' ')); //1000 4
+								if (check_if_num(t) == L"") { num_error(L"ms slot", t); break; }
+								else ms_milliseconds = stoul(t);
+								t = ms.substr(ms.find(' ') + 1);
+								if (check_if_num(t) == L"") { num_error(L"ms n slot", t); break; }
+								else n = stoul(t);
+							}
+							else
+								if (check_if_num(ms, L"ms slot") == L"") break;
+								else ms_milliseconds = stoul(ms);
+						}
+						else ms_milliseconds = 0;
+#pragma endregion
+						//<if inits
+						if (qq[3] == 'r') {
+							for (size_t i = 0; i < a.length(); ++i)
+								if (a[i] == ' ') ++spaces;
+						}
+
+						unsigned short count = 0;
+
+						for (size_t i = 0; i < x_times; ++i)
+						{
+							if_esc();
+							if (pause) if_pause();
+							if (stop) break;
+
+							if (tf_loop || tf_F_retry) ++x_times;
+
+							for (size_t j = 0; j < p.size(); ++j)
+							{
+								if (p[j] == L"") {
+									wstring e = qq.substr(0, 6) + L"> \\4NO VALUE FOUND. \\7USE ONE "; e += pipes ? L"|\\n" : L"&\\n"; showOutsMsg(L"", e, L"", 1);
+									stop = 1; break;
+								}
+
+								//if loops
+								switch (qq[3]) {
+									case 'a':
+									case 'A': {
+										HWND h = FindWindowW(0, p[j].c_str());
+
+										if (qq[3] == 'A') { //ifApp
+											if (GetForegroundWindow() == h) ++count;
+										}
+										else if (qq[3] == 'a') { //ifapp
+											DWORD pid{};
+											GetWindowThreadProcessId(h, &pid);
+											if (h) {
+												if (IsIconic(h)) { ShowWindow(h, SW_RESTORE); ShowWindow(h, SWP_SHOWWINDOW); }
+												if (qq[6] == '~') SetForegroundWindow(h); //ifapp~
+												++count;
+											}
+										}
+										break;
+									}
+									case 'r': {
+										R = L"", G = L"", B = L"", X = L"", Y = L"";
+										t = L" " + p[j];
+										for (unsigned short i = 0; i < spaces + 1; ++i) {
+											t = t.substr(t.find(' ') + 1);
+											if (!R[0]) { R = t.substr(0, t.find(' ')); continue; }
+											if (!G[0]) { G = t.substr(0, t.find(' ')); continue; }
+											if (!B[0]) { B = t.substr(0, t.find(' ')); continue; }
+											if (!X[0]) { X = t.substr(0, t.find(' ')); continue; }
+											if (!Y[0]) { Y = t; break; }
+										}
+										//if (debug == 1) {
+										//	t = R + G + B + X + Y;
+										//	t = regex_replace(a, wregex(L"-"), L"");
+										//	if (check_if_num(t, L"CHECK RGBXY slot") != L"") { stop = 1; break; }
+										//}
+
+										COLORREF color;
+										HDC hDC;
+										hDC = GetDC(NULL);
+
+										if (X[0] && Y[0]) {
+											if (X[0] == '.' || Y[0] == '.') {
+												POINT pt; GetCursorPos(&pt);
+												if (X[0] == '.') { X = to_wstring(pt.x); }
+												if (Y[0] == '.') { Y = to_wstring(pt.y); }
+											}
+											color = GetPixel(hDC, int(stoi(X) * RgbScaleLayout), int(stoi(Y) * RgbScaleLayout));
+										}
+										else { POINT pt; GetCursorPos(&pt); color = GetPixel(hDC, int(pt.x * RgbScaleLayout), int(pt.y * RgbScaleLayout)); }
+										ReleaseDC(NULL, hDC);
+										if (color != CLR_INVALID
+											&& GetRValue(color) == stoi(R)
+											&& GetGValue(color) == stoi(G)
+											&& GetBValue(color) == stoi(B))
+											++count; //&
+										
+										break;
+									}
+									case 'x': {
+										auto q = p[j].find(' ');
+										auto x = p[j].substr(0, q), y = p[j].substr(q + 1);
+										POINT pt; GetCursorPos(&pt);
+										if (x == L".") x = to_wstring(pt.x);
+										if (y == L".") y = to_wstring(pt.y);
+										auto tx = stoi(x), ty = stoi(y);
+
+										switch (qq[5]) {
+											case ':': //== <ifxy:> <ifxy=:> <ifxye:>
+											case '=':
+											case 'e': {
+												if (pt.x == tx && pt.y == ty) ++count;
+												break;
+											}
+											case 'n': //!= <ifxyn:> <ifxy!:>
+											case '!': {
+												if (pt.x != tx && pt.y != ty) ++count;
+												break;
+											}
+											case 'l'://<= <ifxyl:> <ifxyle:> <ifxy<:> <ifxy<=:>
+											case 'L':
+											case '<': {
+												if (qq[6] == 'e' || qq[6] == '=') { if (pt.x <= tx && pt.y <= ty) { ++count; break; } } //ifxyle <=
+												if (pt.x < tx && pt.y < ty) ++count;
+												break;
+											}
+											case 'g': { //>= <ifxyg:> <ifxyge:> <ifxyg=:>
+												if (qq[6] == 'e' || qq[6] == '=') { if (pt.x >= tx && pt.y >= ty) { ++count; break; } } //ifxyge >=/g=
+												if (pt.x > tx && pt.y > ty) ++count;
+												break;
+											}
+										}
+											
+										break;
+									}
+									case 'c': {
+										HANDLE hcb;
+										wchar_t* cb;
+										wstring w;
+
+										OpenClipboard(0);
+										hcb = GetClipboardData(CF_UNICODETEXT);
+										if (hcb != nullptr) {
+											cb = static_cast<wchar_t*>(GlobalLock(hcb));
+											if (cb != nullptr)
+												w = cb;
+										}
+										CloseClipboard();
+
+										switch (qq[5]) {
+											case ':': //== <ifcb:> <ifcb=:> <ifcbe:>
+											case '=':
+											case 'e':
+												if (w == p[j]) ++count;
+												break;
+											case 'A': //<if cb find y starting @ offset x: x y> | <ifcba:1 test>
+											case 'a': { //<if cb substring from index x matches y: x y> | <ifcbA:0 test>
+												auto x = p[j].substr(0, p[j].find(' ')), y = p[j].substr(p[j].find(' ') + 1);
+												if (qq[5] == 'A') {
+													auto s = stoi(x) - 1;
+													if (w.find(y, s) != wstring::npos)
+														++count;
+												}
+												else { //'a'
+													if (w.substr(stoi(x), y.length()) == y)
+														++count;
+												}
+												break;
+											}
+											case 'S': //if cb starts with | <ifcbS:test>
+												if (w.starts_with(p[j]))
+													++count;
+												break;
+											case 'E': //<ifcbE:>
+												if (w.ends_with(p[j]))
+													++count;
+												break;
+											case 'n': //!= <ifcbn:> <ifcb!:>
+											case '!':
+												if (w != p[j])
+													++count;
+												break;
+											case 'f': //<ifcbf:>
+												if (regex_search(w, wregex(p[j])))
+													++count;
+												break;
+											case 'F': //<ifcbF:>
+												if (w.find(p[j]) != string::npos)
+													++count;
+												break;
+											case 'l'://<= <ifcbl:> <ifcble:> <ifcb<:> <ifcb<=:> || <ifcblen:>
+											case 'L':
+											case '<': {
+												if (check_if_num(p[j], L"a slot") != L"" && check_if_num(w, L"clipboard") != L"") {
+													if (qq.substr(5, 3) == L"len") { //length <ifcblen:> <ifcbleng:>
+														unsigned short len = stoi(p[j]);
+														if (qq[8] == '!' || qq[8] == 'n') { if (w.length() != len) { ++count; break; } }
+														else if (qq.substr(8, 2) == L"ge" || qq.substr(8, 2) == L"g=") { if (w.length() >= len) { ++count; break; } }
+														else if (qq.substr(8) == L"g") { if (w.length() > len) { ++count; break; } }
+														else if (qq.substr(8, 2) == L"le" || qq.substr(8, 2) == L"<e" || qq.substr(8, 2) == L"<=") { if (w.length() <= len) { ++count; break; } }
+														else if (qq[8] == 'l' || qq[8] == '<') { if (w.length() < len) { ++count; break; } }
+														else if (qq[8] == ':' || qq[8] == 'e' || qq[8] == '=') { if (w.length() == len) ++count; break; }//==
+														else { p[j].clear(); ++count; break; }
+													}
+													if (qq[6] == 'e' || qq[6] == '=') { if (a == L"0" && w == L"0" || stod(w) <= stod(a)) { ++count; break; } } //ifcble <=
+													if (stod(w) < stod(a)) ++count;
+												}
+												else {
+													stop = 1;
+													c = out.length();
+												}
+												break;
+											}
+											case 'g': { //>= <ifcbg:> <ifcbge:> <ifcbg=:>
+												if (check_if_num(p[j], L"a slot") != L"" && check_if_num(w, L"clipboard") != L"") {
+													if (qq[6] == 'e' || qq[6] == '=') { if (p[j] == L"0" && w == L"0" || stod(w) >= stod(p[j])) { ++count; break; } } //ifcbge >=/g=
+													if (stod(w) > stod(p[j])) ++count;
+												}
+												break;
+											}
+										}
+
+										break;
+									}
+								}
+
+								if (stop) break;
+
+								if (ands ? count == p.size() : count) multi_.br_ = 1;
+								if (multi_.br_) break;
+
+							}
+
+							if (stop) break;
+
+							if (tf_feedback[0]) if (tf_feedback.length() > 1) showOutsMsg(L"", tf_feedback, L"", 1); else wcout << tf_feedback;
+
+							if (multi_.br_) {
+								if (sleeper_tick) multi_sleep(multi_, ms_milliseconds, n);
+								break;
+							}
+
+							ms_milliseconds = multi_.br_ || !tf_loop && x_times == i + 1 && !multi_.br_ ? 0 : ms_milliseconds;
+							multi_sleep(multi_, ms_milliseconds, n);
+
+						}
+
+						if (stop) { stop = 0; c = out.length(); break; }
+
+						if (qq[3] == 'r' && qq[6] == '~' && multi_.br_ && !stop && X[0] && Y[0]) {
+							POINT pt; GetCursorPos(&pt); qxcc = pt.x; qycc = pt.y;
+							SetCursorPos(stoi(X), stoi(Y));
+						}
+
+						if (tf_T[0] || tf_F[0] || tf[0] && !tf_F[0]) {
+							if (tf_T_continue && multi_.br_ || tf_F_continue && !multi_.br_ || tf_loop) { rei(); multi_.br_ = 0; break; }
+							tf_T = multi_.br_ ? tf_T : tf_F;
+							if (!tf_F[0]) tf_T = tf;//single tf !tf_F[0] case
+							tf_T = tf_T + L">";
+							if (tf_T_link && multi_.br_ || tf_F_link && !multi_.br_ || !tf_F[0] && tf_F_link) tf_T = L"<" + tf_T;
+							wstring l = qq.substr(qq.find('>') + 1);
+							qq = tf_T;
+							connect(tf_T);
+							out = tf_T_link_plus_connect && multi_.br_ || tf_F_link_plus_connect && !multi_.br_ || !tf_F[0] && tf_F_link_plus_connect ? tf_T + l : tf_T;
+									
+							multi_.br_ = 0;
+
+							break;
+						}
+
+						if (!multi_.br_) { c = out.length(); break; }
+
+						rei();
+
+						multi_.br_ = 0;
+
+					}
+					//qqb(L"<if+")
+					else if (qp[0] && chk == qq.substr(0, chk.length())) {//<if+:> | stop if <+>
+						wstring x = qp.substr(0, qp.find(' '));
+						if (check_if_num(x) == L"" || !qp[0]) { connect(out); break; }
+
+						bool b = 0; int q = stoi(qp.substr(0, qp.find(' ')));
+						wstring l = L""; if (qp.find(' ') != string::npos) l = qp.substr(qp.find(' ') + 1);//<if+:# true:>
+						switch (qq[4]) {
+						default:
+						case ':': //==
+						case 'e':
+						case '=':
+							if (multi_.icp_ == q) b = 1;
+							break;
+						case 'n': //!=
+						case '!':
+							if (multi_.icp_ != q) b = 1;
+							break;
+						case 'l': //<=
+						case 'L':
+						case '<':
+							if (qq[5] == '=' || qq[5] == 'e') {
+								if (qp <= to_wstring(multi_.icp_)) b = 1;
+							} //if+le <=
+							else {
+								if (multi_.icp_ < q) b = 1;
+							}
+							break;
+						case 'g': //g=
+							if (qq[5] == '=' || qq[5] == 'e') {
+								if (multi_.icp_ >= q) b = 1;
+							} //if+ge >=/g=
+							else {
+								if (multi_.icp_ > q) b = 1;
+							}
+						}
+						if (b) {
+							if (l > L"") {
+								if (l == L"<") { out = out.substr(out.find('>') + 1); }
+								else
+								out = l[0] == '<'
+									? l + L">" + qq.substr(qq.find('>') + 1)
+									: L"<" + l + L">";//<if+:# true->
+								if (out_speed > 0) out_sleep = 0;
+								c = -1; break;
+							}
+							c = out.length(); break;
+						}
+						else rei();
+					}
+					else connect(out);
+					}
+					break;
+				case 'n':
+					if (qqb(L"<ins")) kb_press(L"<ins", VK_INSERT);
+					else connect(out);
+					break;
+				default:
+					connect(out);
+				}
+				break;
+			case'l':
+				switch (qq[2]) {
+				case 'o': //lowercase cb
+					if (qqb(L"<lower>")) {
+						wstring s = L"", b = L"";
+						b = cbGet();
+						for (size_t x = 0; x < b.length(); ++x)
+							s += tolower(b[x]);
+						cbSet(s);
+						rei();
+					}
+					else connect(out);
+					break;
+				case 'c':
+					if (qqb(L"<lc"))
+						kb_press(L"<lc", VK_F7);//left click
+					else
+						connect(out);
+					break;
+				case 'h':
+					if (qqb(L"<lh>")) { //left hold
+						mouseEvent(MOUSEEVENTF_LEFTDOWN);
+						rei();
+					}
+					else
+						connect(out);
+					break;
+				case 'r':
+					if (qqb(L"<lr>")) { //left release
+						mouseEvent(MOUSEEVENTF_LEFTUP);
+						rei();
+					}
+					else
+						connect(out);
+					break;
+				case 'e':
+					if (qqb(L"<left"))
+						kb_press(L"<left", VK_LEFT);
+					else
+						connect(out);
+					break;
+				case 's':
+					if (qqb(L"<ls"))
+						kb_press(L"<ls", VK_F7); //hscroll+
+					else
+						connect(out);
+					break;
+				default:
+					connect(out);
+				}
+				break;
+			case'm':
+				switch (qq[2]) {
+				case 'l':
+					if (qqb(L"<ml>")) {//print multiLineDelimiter
+						wstring w = repeats;
+						run(utf8_to_wstring(delimiter));
+						repeats = w;
+						rei();
+						if (out_speed > 0) out_sleep = 0;
+					}
+					else connect(out);
+					break;
+				case 'c':
+					if (qqb(L"<mc")) kb_press(L"<mc", VK_F7);//middle click
+					else connect(out);
+					break;
+				case 'h':
+					if (qqb(L"<mh>")) {//middle hold
+						mouseEvent(MOUSEEVENTF_MIDDLEDOWN);
+						rei();
+					}
+					else connect(out);
+					break;
+				case 'r':
+					if (qqb(L"<mr>")) {//middle release
+						mouseEvent(MOUSEEVENTF_MIDDLEUP);
+						rei();
+					}
+					else connect(out);
+					break;
+				case 'e':
+					if (qqb(L"<menu")) kb_press(L"<menu", VK_APPS);
+					else connect(out);
+					break;
+				default:
+					connect(out);
+				}
+				break;
+			case'p':
+				switch (qq[2]) {
+				case 'a':
+					if (qqb(L"<pause")) { kb_press(L"<pause", VK_PAUSE); GetAsyncKeyState(VK_PAUSE); }
+					else connect(out);
+					break;
+				case 's':
+					if (qqb(L"<ps")) kb_press(L"<ps", VK_SNAPSHOT);
+					else connect(out);
+					break;
+				case 'u':
+					if (qqb(L"<pu")) kb_press(L"<pu", VK_PRIOR);//pgup
+					else connect(out);
+					break;
+				case 'd':
+					if (qqb(L"<pd")) kb_press(L"<pd", VK_NEXT);//pgdn
+					else connect(out);
+					break;
+				default:
+					connect(out);
+				}
+				break;
+			case'R':
+			case'r':
+				switch (qq[2]) {
+				case ':':
+					if (qqb(L"<R:") || qqb(L"<r:")) {//.h ReplacerDb:
+						if (qq[1] == 'R') showOutsMsg(L"", qp, L"\n", 0);
+						qp = regex_replace(qp, wregex(L"/"), L"\\");
+						replacerDb = qp;
+						rei();
+					}
+					else connect(out);
+					break;
+				case 'c':
+					if (qqb(L"<rc")) kb_press(L"<rc", VK_F7); else connect(out);
+					break;
+				case 'h':
+					if (qqb(L"<rh>")) {//right hold
+						mouseEvent(MOUSEEVENTF_RIGHTDOWN);
+						rei();
+					}
+					else connect(out);
+					break;
+				case 'r':
+					if (qqb(L"<rr>")) {//right release
+						mouseEvent(MOUSEEVENTF_RIGHTUP);
+						rei();
+					}
+					else connect(out);
+					break;
+				case 'i':
+					if (qqb(L"<right")) kb_press(L"<right", VK_RIGHT); else connect(out);
+					break;
+				case 's':
+					if (qqb(L"<rs")) { kb_press(L"<rs", VK_F7); }
+					else connect(out);//hscroll-
+					break;
+				case 'G':
+				case 'g':
+					if (qqb(L"<rgb")) {//print r g b x y | <rgb> <rgb 5000>
+						out = getRGB(qq[4] == '>' ? 1 : 2);
+						if (out[0]) c = -1;
+						if (out_speed > 0) out_sleep = 0;
+					}
+					else connect(out);
+					break;
+				case 'e':
+					if (qqb(L"<replace:")) {
+						if (cbGet() > L"") {
+							setQxQy(qp);
+							if (qp.find(L"\\,") != wstring::npos) {// \,
+								wstring t = qp.substr(qp.find_last_of(L"\\") + 2);
+								if (t.find(',') != string::npos) {
+									qx = qp.substr(0, qp.find_last_of(L"\\") + t.find(',') + 2);
+									qy = qp.substr(qx.length() + 1);
+									qx = regex_replace(qx, wregex(L"\\\\,"), L",");// \,
+								}
+							}
+							wstring d = utf8_to_wstring(delimiter);
+							qx = regex_replace(qx, wregex(L"\\\\g"), L">"); qx = regex_replace(qx, wregex(L"\\\\m"), d);
+							qy = regex_replace(qy, wregex(L"\\\\g"), L">"); qy = regex_replace(qy, wregex(L"\\\\m"), d);
+							wstring b = regex_replace(cbGet(), wregex(qx), qy);
+							cbSet(b);
+						}
+						rei();
+					}
+					else connect(out);
+					break;
+				default:
+					connect(out);
+				}
+				break;
+			case 's':
+			case 'S':
+				switch (qq[2]) {
+				case 'E':
+				case 'e':
+					if (qqb(L"<SE:") || qqb(L"<se:")) {//.h Switch Settings: file
+						qp = regex_replace(qp, wregex(L"/"), L"\\");
+						wifstream f(qp); if (!f) { f.close(); showOutsMsg(L"", L"\\n\\4Settings \\7\\0C\\" + qp + L"\\0C\\\\4 not found!\\7\\n", L"", 1); return; } f.close();
+						wstring t = settings, _ = database;
+						settings = qp;
+						if (qq[1] == 's') se = settings.substr(settings.find_last_of('\\') + 1) + L" - ";
+						load_settings();
+						if (qq[1] == 'S') settings = t;
+						if (_ != database)
+							mvdb = 1;
+						rei();
+						break;
+					}
+					else if (qqb(L"<se>") || qqb(L"<SE>")) { 
+						if (debug != 1) load_settings();
+						if (qq[1] == 's') {
+							printSe();
+							show_fg();
+						}
+						rei();
+					}
+					else connect(out);
+					break;
+				case 'h':
+					if (qqb(L"<shift>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LSHIFT); rei(); }
+					else if (qqb(L"<shift->")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LSHIFT); kb_release(VK_RSHIFT); rei(); }
+					else if (qqb(L"<shift")) kb_press(L"<shift", VK_LSHIFT);
+					else connect(out);
+					break;
+				case 'p':
+					if (qqb(L"<speed:")) {
+						if (check_if_num(qp, L"<speed: {slot}>") != L"") {
+							out_speed = stoi(qp); rei(); out_sleep = 0;
+						}
+						else printq();
+					}
+					else if (qqb(L"<space")) kb_press(L"<space", VK_SPACE);
+					else connect(out);
+					break;
+				case 'd':
+					if (qqb(L"<sd")) { kb_press(L"<sd", VK_F7); }//scroll down
+					else connect(out);
+					break;
+				case 'r':
+					if (qqb(L"<sr")) { kb_press(L"<sr", VK_F7); }//scroll right
+					else connect(out);
+					break;
+				case 'u':
+					if (qqb(L"<su")) { kb_press(L"<su", VK_F7); }//scroll up
+					else connect(out);
+					break;
+				case 'l':
+					if (qqb(L"<sl")) { kb_press(L"<sl", VK_F7); }//scroll left
+					else connect(out);
+					break;
+				default:
+					connect(out);
+				}
+				break;
+			case 't':
+				if (qqb(L"<tab")) kb_press(L"<tab", VK_TAB);
+				else if (qqb(L"<time>") || qqb(L"<time:")) {
+					wstring w{}; getTime(w);
+					if (qq[5] == '>') w = w.substr(w.rfind(L" ") - 8, 8);
+					out = w + qq.substr(qq.find('>') + 1, qq.length());
+					c = -1;
+					if (out_speed > 0) out_sleep = 0;
+				}
+				else connect(out);
+				break;
+			case 'u':
+				if (qqb(L"<upper>")) { wstring s = L"", c = L""; c = cbGet(); for (size_t x = 0; x < c.length(); ++x) { s += toupper(c[x]); } cbSet(s); rei(); }
+				else if (qqb(L"<up")) kb_press(L"<up", VK_UP);
+				else connect(out);
+				break;
+			case 'v':
+				if (qqb(L"<v>")) { toggle_visibility(); rei(); }
+				else connect(out);
+				break;
+			case 'w':
+				if (qqb(L"<win>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LWIN); rei(); }
+				else if (qqb(L"<win->")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LWIN); rei(); }
+				else if (qqb(L"<win")) kb_press(L"<win", VK_LWIN);
+				else connect(out);
+				break;
+			case 'x':
+				switch (qq[2]) {
+				case 'y':
+					if (qqb(L"<xy:") || qqb(L"<xy~:")) {
+						setQxQy(qp); //# #
+						if (delimiter[0] != '\n' && qx[0] == '\n' || qx[0] == '\t' || qy[0] == '\n' || qy[0] == '\t') {
+							qx = regex_replace(qx, wregex(L"\n"), L""); qx = regex_replace(qx, wregex(L"\t"), L"");
+							qy = regex_replace(qy, wregex(L"\n"), L""); qy = regex_replace(qy, wregex(L"\t"), L"");
+						}
+						if (qx[0] == '.' || qy[0] == '.' || qq[3] == '~') {//Use . for current pt | <xy:. 0>  <t-<ifxy:0 . | . 0 | . 864 | 1638 .,1,1000,:>1
+							POINT pt; GetCursorPos(&pt);
+							if (qq[3] == '~') { //<~~>
+								qxcc = pt.x;
+								qycc = pt.y;
+							}
+									
+							if (qx == L".")
+								qx = to_wstring(pt.x);
+							if (qy == L".")
+								qy = to_wstring(pt.y);
+									
+						}
+						SetCursorPos(stoi(qx), stoi(qy));
+						rei();
+					}
+					else if (qqb(L"<xy>")) {//print pointer
+						POINT pt; GetCursorPos(&pt);
+						out = to_wstring(pt.x) + L" " + to_wstring(pt.y) + qq.substr(qq.find('>') + 1, qq.length());
+						c = -1;
+						if (out_speed > 0) out_sleep = 0;
+					}
+					else connect(out);
+					break;
+				default:
+					connect(out);
+				}
+				break;
+			case 'y':
+				if (qqb(L"<yesno:")) {
+
+					wstring me = qp;
+
+					if (npos_find(qp, '\\', 1)) {
+						me = regex_replace(me, wregex(L"[\\\\][\\s]"), L"::s::");
+					}
+
+					auto qu = me.substr(0, me.find(' '));
+					me = me.substr(me.find(' ') + 1);
+
+					if (npos_find(qp, '\\', 1)) {
+						me = regex_replace(me, wregex(L"::s::"), L" ");
+						me = regex_replace(me, wregex(L"\\\\g"), L">");
+						me = regex_replace(me, wregex(L"\\\\n"), L"\n");
+						qu = regex_replace(qu, wregex(L"::s::"), L" ");
+						qu = regex_replace(qu, wregex(L"\\\\g"), L">");
+						qu = regex_replace(qu, wregex(L"\\\\n"), L"\n");
+					}
+
+					multi_.out_ = out;
+					multi_.qq_ = qq;
+					multi_.qp_ = qp;
+					multi_.c_ = c;
+
+					int m = MessageBoxW(0, me.c_str()
+						, qu.c_str()
+						, MB_YESNO);
+					if (m == IDYES) {
+						out = multi_.out_;
+						qq = multi_.qq_;
+						qp = multi_.qp_;
+						c = multi_.c_;
+						rei();
+						continue;
+					}
+					else {
+						c = out.length();
+						break;
+					}
+				}
+				else connect(out);
+				break;
+			default:
+				connect(out);
+			} //<x>
+			break;
+		default:
+		{
+			//if !"#$%& ()*+ : > ?&AZ ^ _ {|}~
+			if (out[c] == 58
+				|| out[c] < 91 && out[c] > 61
+				|| out[c] < 39 && out[c] > 32
+				|| out[c] == 95
+				|| out[c] < 44 && out[c] > 39
+				|| out[c] > 122 && out[c] < 127
+				|| out[c] == 94)
+			{
+				kb_hold(VK_LSHIFT);
+				hold_shift = 1;
 			}
 
-			if (multi_.store_[0]) repeats = multi_.store_;
+			kb(out[c]);
 
-			break;
+			if (hold_shift)
+				shift_release();
+
+		}
+
 		}
 
 	}
 
-	out_speed = 0;
-	if (RSHIFTLSHIFT_Only) rri = 0;
-	if (found_io || strand[0] && strand[strand.length() - 1] == '>') {
-		if (ccm) { close_ctrl_mode = !close_ctrl_mode; ccm = 0; }
-		if (strand[0]) strand.clear();
-		prints();
-		stop = 0;
-		found_io = 0;
-		if (!multi_run) multi_run = 1;
-	}
+	if (multi_.store_[0]) repeats = multi_.store_;
+
+	close_run();
 	
 	if (mvdb) { //<se:>
 		mvdb = 0;
 
 		vstrand.clear();
 		vstrand_out.clear();
+		vstrand_map.clear();
 		make_vdb_table();
 
 		strand = L"<anu>";
@@ -3459,7 +3386,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 
 			if (FindWindowW(0, (editorDb).c_str()) == h || FindWindowW(0, (db + editor).c_str()) == h) {
 				//cout << "db Saved\n";
-				vstrand.clear(); vstrand_out.clear(); make_vdb_table(); cs = 1;
+				vstrand.clear(); vstrand_out.clear(); vstrand_map.clear(); make_vdb_table(); cs = 1;
 			}
 			else if (FindWindowW(0, (editorSe).c_str()) == h || FindWindowW(0, (se + editor).c_str()) == h) {
 				//cout << "se Saved\n";
