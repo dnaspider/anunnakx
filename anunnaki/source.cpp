@@ -49,7 +49,7 @@ vector<Strand> vstrand{};
 vector<Strand_out> vstrand_out{};
 unordered_map<wstring, size_t> vstrand_map{};
 size_t c = 0;
-size_t found_io = 0, found_io_repeat = 0, follow = 0;
+size_t found_io = 0, found_io_repeat = 0;
 ctp c1{}, c2{}; //CtrlKey elapsed
 double RgbScaleLayout = 1.00; //100%
 double ic = 0; //<+> icp
@@ -91,9 +91,9 @@ bool stop = 0, pause = 0;
 bool utf_8 = 1, u8{};
 bool ccm = 0; //close_ctrl_mode toggle
 
-bool fallthrough_{};
 bool clo{}; //clock
 bool multi_run{1};
+bool follow{};
 
 #pragma endregion
 
@@ -1032,8 +1032,7 @@ static wstring connect(wstring& w, bool bg = 0) {
 	}
 
 	if (con) {
-		bool x{};
-		if (!follow) { follow = found_io; x = 1; }
+		if (!follow) follow = 1;
 		wstring o = L"";
 
 		if (auto v = k.substr(0, k.length() - 2); k == vstrand.at(vstrand_map[v]).in) {
@@ -1042,7 +1041,6 @@ static wstring connect(wstring& w, bool bg = 0) {
 		}
 		
 		if (o[0]) {
-			if (x) o += L"<@:>"; //follow
 			if (bg) return replacerDb[0] ? is_replacer(o) : o;
 			
 			w = o + qq.substr(k.length());
@@ -1112,7 +1110,7 @@ Settings
 
 Database
 <db>		Show
-<db:>		Load. Use se.txt [Database]
+<db:>		Load too. Use se.txt [Database] for fresh db
 <DB>		Reload
 
 Mouse controls
@@ -1172,7 +1170,7 @@ Link to <t:> if true (true false slot)
 Link and continue. Use <
 <ifapp~: t, 1, 1, <t: <f:><'1>
 
-Options for true false slot. Use <db> algos or
+Options for true false slot
 <		Continue
 ,		Retry (false slot)
 
@@ -1289,9 +1287,6 @@ Manual controls
 <cb+:>		Append
 <cb-:>		Prepend
 <cl>		Length
-
-<db> algos. Use : or -
-<in:>		Scan db
 
 Misc.
 \\\\g		Inside <ifapp:>... for >
@@ -1441,12 +1436,11 @@ static void multi_sleep(Multi_ &multi_, unsigned long ms, unsigned long n = 1) {
 static void close_run() {
 	out_speed = 0;
 	if (RSHIFTLSHIFT_Only) rri = 0;
-	if (found_io || strand[0] && strand[strand.length() - 1] == '>') {
+	if (follow || found_io || strand[0] && strand[strand.length() - 1] == '>') {
 		if (ccm) { close_ctrl_mode = !close_ctrl_mode; ccm = 0; }
-		if (strand[0]) strand.clear();
-		stop = 0;
-		found_io = 0;
+		if (follow) found_io = found_io_repeat;
 		if (!multi_run) multi_run = 1;
+		if (strand[0]) strand.clear();
 		prints();
 	}
 }
@@ -1457,7 +1451,6 @@ static void scan_db() {
 	found_io = 0;
 	follow = 0;
 	stop = 0;
-	fallthrough_ = 0;
 	clo = 0;
 	if (out[0]) out.clear();
 
@@ -1482,7 +1475,7 @@ static void scan_db() {
 				}
 			}
 
-			//backspace input depending on g and set repeat and input accordingly
+			//backspace input depending on g and set repeat and output accordingly
 			switch (vstrand.at(found_io).g[0])
 			{
 			case '>':
@@ -1580,15 +1573,6 @@ static void scan_db() {
 			}
 
 			switch (qq[1]) {
-			case '@': //<@:> follow
-				if (qq[2] == ':' && qq[3] == '>') {
-					found_io = found_io_repeat;
-					follow = 0;
-					if (out_speed > 0) out_sleep = 0;
-					rei();
-				}
-				else connect(out);
-				break;
 			case ':':
 				if (qqb(L"<:")) { //cout
 					showOutsMsg(L"", qp, L"", 1);
@@ -1820,10 +1804,10 @@ static void scan_db() {
 						qp = regex_replace(qp, wregex(L"/"), L"\\");
 						wifstream f(qp); if (!f) { f.close(); showOutsMsg(L"", L"\\n\\4Database \\7\\0C\\" + qp + L"\\0C\\\\4 not found!\\7\\n", L"", 1); return; } f.close();
 						rei();
-						//db
+						//append db
 						wstring _ = database;
 						database = qp;
-						vstrand.clear(); vstrand_out.clear(); vstrand_map.clear(); make_vdb_table();
+						make_vdb_table();
 						database = _;
 						break;
 					}
