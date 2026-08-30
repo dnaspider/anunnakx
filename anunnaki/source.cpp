@@ -942,12 +942,6 @@ static void kb_press(wstring s, short key) {
 
 }
 
-static bool npos_find(wstring& w, char c, bool b = 1) {
-	return b
-		? w.find(c) != string::npos
-		: w.find(c) == string::npos;
-}
-
 static void setQxQy(wstring x) {
 	size_t q;
 
@@ -1021,13 +1015,11 @@ static wstring is_replacer(wstring& q) { // Replacer | {var:} {var-} {var>} | <r
 }
 
 static wstring connect(wstring& w, bool bg = 0) {
-	bool con{};
-	wstring k = qq.substr(0, qq.find('>') + 1);
-	if (bg) { k = qq + L">"; con = 1; }
+	bool con = bg;
+	wstring k = !bg ? qq.substr(0, qq.find('>') + 1) : qq + L">";
 
-	if (k.find('>') != string::npos) {
-		wchar_t s = k[k.length() - 2];
-		if (s == '!' || s == '^' || s == ':' || s == '-' || s == ' ')
+	if (!bg) {
+		if (auto s = k[k.length() - 2]; s == ':' || s == '-' || s == ' ')
 			con = 1;
 	}
 
@@ -1535,13 +1527,6 @@ static void scan_db() {
 		switch (out[c]) { //extracted
 		case '<':
 			qq = out.substr(c, out.length() - c); //<test>
-					
-			if (qq[1] == '!' || qq[1] == '^') { //<!x:> or <^x:> scan
-				if (qq[2] != '!' && qq[2] != ':' || qq[1] == '^') {
-					connect(out);
-					break;
-				}
-			}
 
 			if (auto f = qq.find('>'); f != string::npos) {
 				chk = L"";
@@ -1832,7 +1817,7 @@ static void scan_db() {
 					break;
 				case 'n':
 					if (qqb(L"<dna:")) {
-						if (npos_find(qp, '\\', 1)) qp = regex_replace(qp, wregex(L"\\\\\\\\\\\\\\\\g"), L">"); // \\\\g
+						if (qp.find('\\') != string::npos) qp = regex_replace(qp, wregex(L"\\\\\\\\\\\\\\\\g"), L">"); // \\\\g
 						HWND h = GetConsoleWindow(); SetConsoleTitleW(qp.c_str()); rei();
 					}
 					else connect(out);
@@ -2016,7 +2001,7 @@ static void scan_db() {
 							//set <app:'feedback'a,>
 							if (a[0] == '\'') {
 								tf_feedback = a.substr(1);
-								if (npos_find(tf_feedback, '\'', 1)) {
+								if (tf_feedback.find('\'') != string::npos) {
 									tf_feedback = tf_feedback.substr(0, tf_feedback.find('\''));
 									a = a.substr(tf_feedback.length() + 2);
 								}
@@ -2031,19 +2016,19 @@ static void scan_db() {
 						if (!tf[0] && commas > 2) {
 							tf = t; if (tf[0] == ' ') tf = tf.substr(1); // set
 
-							if (tf[0] && npos_find(tf, ' ', 1)) { //t: f: slot
+							if (tf[0] && tf.find(' ') != string::npos) { //t: f: slot
 								tf_T = tf.substr(0, tf.find(' '));
 								tf_F = tf.substr(tf.find(' ') + 1);
 
 								//lint x:
-								if (tf_T.length() >= 1 && (npos_find(tf_T, '!', 1) || npos_find(tf_T, '^', 1) || npos_find(tf_T, ':', 1) || npos_find(tf_T, '-', 1))) {
+								if (tf_T.length() >= 1 && tf_T.find(':') != string::npos || tf_T.length() >= 1 && tf_T.find('-') != string::npos) {
 									//link_plus_connect <x:
 									if (tf_T[0] == '<')
 										tf_T_link_plus_connect = 1;
 									else
 										tf_T_link = 1;
 								}
-								if (tf_F.length() >= 1 && (npos_find(tf_F, '!', 1) || npos_find(tf_F, '^', 1) || npos_find(tf_F, ':', 1) || npos_find(tf_F, '-', 1))) {
+								if (tf_F.length() >= 1 && tf_F.find(':') != string::npos || tf_T.length() >= 1 && tf_F.find('-') != string::npos) {
 									if (tf_F[0] == '<')
 										tf_F_link_plus_connect = 1;
 									else
@@ -2058,11 +2043,11 @@ static void scan_db() {
 								if (tf_F == L",") tf_F_retry = 1;
 
 							}
-							else if (tf == L":" || tf == L"-" || !tf[0])
+							else if (!tf[0])
 								tf_loop = 1;
 							else if (tf == L"<")
 								tf_F_continue = 1; //single tf_F continue
-							else if (tf.length() >= 1 && (npos_find(tf, '!', 1) || npos_find(tf, '^', 1) || npos_find(tf, ':', 1) || npos_find(tf, '-', 1))) {
+							else if (tf.length() >= 1 && (tf.find(':') != string::npos || tf.find('-') != string::npos)) {
 								if (tf[0] == '<') //single tf_F case
 									tf_F_link_plus_connect = 1;
 								else
@@ -2128,7 +2113,7 @@ static void scan_db() {
 
 						unsigned long ms_milliseconds{}, n = 1;
 						if (ms[0]) {
-							if (npos_find(ms, ' ', 1)) { //set ms_milliseconds
+							if (ms.find(' ') != string::npos) { //set ms_milliseconds
 								t = ms.substr(0, ms.find(' ')); //1000 4
 								if (check_if_num(t) == L"") { num_error(L"ms slot", t); break; }
 								else ms_milliseconds = stoul(t);
@@ -2777,14 +2762,14 @@ static void scan_db() {
 
 					wstring me = qp;
 
-					if (npos_find(qp, '\\', 1)) {
+					if (qp.find('\\') != string::npos) {
 						me = regex_replace(me, wregex(L"[\\\\][\\s]"), L"::s::");
 					}
 
 					auto qu = me.substr(0, me.find(' '));
 					me = me.substr(me.find(' ') + 1);
 
-					if (npos_find(qp, '\\', 1)) {
+					if (qp.find('\\') != string::npos) {
 						me = regex_replace(me, wregex(L"::s::"), L" ");
 						me = regex_replace(me, wregex(L"\\\\g"), L">");
 						me = regex_replace(me, wregex(L"\\\\n"), L"\n");
@@ -2860,7 +2845,6 @@ static void scan_db() {
 
 		strand = L"<anu>";
 		scan_db();
-		repeats = repeats[0] ? repeats.substr(3) : L"";
 		strand.clear();
 	}
 }
@@ -3494,8 +3478,6 @@ RgbScaleLayout			1.00
 
 	scan_db();
 	
-	repeats = repeats[0] ? repeats.substr(3) : L"";
-
 	HHOOK hook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, NULL, 0);
 	//if (!hook) { cout << "Load hook failed. Try v1.0.0.1"; return 1; }
 
