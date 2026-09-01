@@ -1430,8 +1430,7 @@ static void scan_db() {
 		found_io = found_io_repeat;
 	}
 	else if (strand[0]) {
-		wstring k = strand.substr(0, strand.length() - (close_ctrl_mode ? 1 : 0));
-		if (auto it = vstrand_map.find(k); it != vstrand_map.end()) {
+		if (auto it = vstrand_map.find(strand.substr(0, strand.length() - (close_ctrl_mode ? 1 : 0))); it != vstrand_map.end()) {
 			found_io = it->second;
 			repeat_switch = 0;
 			
