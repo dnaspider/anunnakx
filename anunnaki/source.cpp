@@ -851,10 +851,6 @@ static void mouseEvent(short key) {
 	SendInput(1, &ip, sizeof(ip));
 }
 
-static void rei() {
-	c += qq.find('>');
-}
-
 static void kb_hold(short key) {
 	INPUT ip{}; ip.type = INPUT_KEYBOARD; ip.ki.wVk = key; ip.ki.time = 0;
 	if (key == VK_LMENU || key == VK_CONTROL) ip.ki.dwFlags = 0; else ip.ki.dwFlags = 1;
@@ -938,8 +934,6 @@ static void kb_press(wstring s, short key) {
 		if (out_speed > 0 && x != j + 1) sleep(out_speed);
 	}
 
-	rei();
-
 }
 
 static void setQxQy(wstring x) {
@@ -977,8 +971,10 @@ static wstring is_replacer(wstring& q) { // Replacer | {var:} {var-} {var>} | <r
 					else
 						k = q.substr(0, q.find_first_of(L" -:>"));
 					
-					if (vstrand_map.contains(k) && q.ends_with(vstrand.at(vstrand_map[k]).g) && q.length() == k.length() + vstrand.at(vstrand_map[k]).g.length())
-						q = vstrand_out.at(vstrand_map[k]).out;
+					if (auto it = vstrand_map.find(k); it != vstrand_map.end() && q.ends_with(vstrand.at(it->second).g) && q.length() == k.length() + vstrand.at(it->second).g.length()) {
+						follow = 1;
+						q = vstrand_out.at(it->second).out;
+					}
 				}
 				else {
 					q = tqg;
@@ -1014,37 +1010,18 @@ static wstring is_replacer(wstring& q) { // Replacer | {var:} {var-} {var>} | <r
 	return q;
 }
 
-static wstring connect(wstring& w, bool bg = 0) {
-	bool con = bg;
-	wstring k = !bg ? qq.substr(0, qq.find('>') + 1) : qq + L">";
-
-	if (!bg) {
-		if (auto s = k[k.length() - 2]; s == ':' || s == '-' || s == ' ')
-			con = 1;
-	}
-
-	if (con) {
+static void connect(wstring& v) {
+	auto k = v.substr(0, v.length() - 2); //<x:> to <x
+	if (auto it = vstrand_map.find(k); it != vstrand_map.end()) {
 		if (!follow) follow = 1;
-		wstring o = L"";
-
-		if (auto v = k.substr(0, k.length() - 2); k == vstrand.at(vstrand_map[v]).in) {
-			found_io = vstrand_map[v];
-			o = vstrand_out.at(found_io).out;
-		}
-		
-		if (o[0]) {
-			if (bg) return replacerDb[0] ? is_replacer(o) : o;
-			
-			w = o + qq.substr(k.length());
-			if (replacerDb[0]) is_replacer(w);
-			c = -1;
-			if (out_speed > 0) out_sleep = 0;
-			return L"";
-		}
-		//else use <x:><''> for exit
+		out = vstrand_out.at(it->second).out + qq.substr(v.length() + (qq[1] == '!'));
+		if (replacerDb[0]) is_replacer(out);
+		c = -1;
+		if (out_speed > 0) out_sleep = 0;
+		return;
 	}
 	printq();
-	return L"";
+	return;
 }
 
 static bool qqb(const wstring s) {
@@ -1074,11 +1051,11 @@ i\>		Use this format to ignore tabs and newlines
 	o
 \
 
-<i:>o		Link. Use : or -
-i <i:>
-
 i		Fallthrough
 ii o
+
+<i:>o		Link. Use : or -
+i <i:>
 
 Use RCTRL, F2, PAUSE, RSHIFT+LSHIFT, or COMMA+ESC after input to run (or to toggle < if no input)
 
@@ -1191,10 +1168,10 @@ Keyboard controls
 <shift>
 <alt>
 <win>
-<ctrl->		Release key
-<shift->
-<alt->
-<win->
+<ctrl~>		Release key
+<shift~>
+<alt~>
+<win~>
 <up>		Press key
 <right>
 <down>
@@ -1217,7 +1194,7 @@ Keyboard controls
 <ps>
 <f12>
 <win 1>		Multi press
-in <shift><left 3><shift-><ctrl>x<ctrl->
+in <shift><left 3><shift~><ctrl>x<ctrl~>
 
 Sleep
 <,>		160 milliseconds
@@ -1272,7 +1249,7 @@ Manual controls
 <xy>		Out
 <rgb>
 <time>
-<time:>
+<time~>
 
 <cb>		Paste
 <cb:>		Set
@@ -1453,8 +1430,9 @@ static void scan_db() {
 		found_io = found_io_repeat;
 	}
 	else if (strand[0]) {
-		if (wstring k = strand.substr(0, strand.length() - (close_ctrl_mode ? 1 : 0)); vstrand_map.contains(k)) {
-			found_io = vstrand_map[k];
+		wstring k = strand.substr(0, strand.length() - (close_ctrl_mode ? 1 : 0));
+		if (auto it = vstrand_map.find(k); it != vstrand_map.end()) {
+			found_io = it->second;
 			repeat_switch = 0;
 			
 			//handle fallthrough_
@@ -1524,32 +1502,55 @@ static void scan_db() {
 			out_sleep = 1;
 		}
 
+		size_t f_{};
+		
 		switch (out[c]) { //extracted
 		case '<':
-			qq = out.substr(c, out.length() - c); //<test>
+			qq = out.substr(c, out.length() - c); //<test
+			
+			f_ = qq.find('>');
+			if (f_ != string::npos) {
 
-			if (auto f = qq.find('>'); f != string::npos) {
+				if (qq[1] == '!') { //<!x:>
+					if (qq[2] != '!' && qq[2] != ':') {
+						if (qq[f_ - 1] == ':' || qq[f_ - 1] == '-' || qq[f_ - 1] == ' ') { //<!x:> <!x-> <!x >
+							auto v = L"<" + qq.substr(2, f_ - 1); //<!x:> to <x:>
+							connect(v);
+							break;
+						}
+					}
+				}
+
 				chk = L"";
 				qp = L"";
 						
 				if (qq[1] == ':' || qq[1] == '\'' || qq[1] == ',') { //<:> <'> <,>
 					chk = qq.substr(0, 2); //<:
-					qp = qq.substr(2, f - 2); //#
+					qp = qq.substr(2, f_ - 2); //#
 				}
 				else {
-					if (qq.substr(0, f).find(':') != std::string::npos) { //<test:#>
+					if (qq.substr(0, f_).find(':') != std::string::npos) { //<test:#>
 						chk = qq.substr(0, qq.find(':') + 1); //<test:
-						qp = qq.substr(chk.length(), f - chk.length()); //#
+						qp = qq.substr(chk.length(), f_ - chk.length()); //#
 					}
-					else if (qq.substr(0, f).find(' ') != std::string::npos) { //<test #>
+					else if (qq.substr(0, f_).find(' ') != std::string::npos) { //<test #>
 						chk = qq.substr(0, qq.find(' ')); //<test
-						qp = qq.substr(chk.length() + 1, f - chk.length() - 1); //#
+						qp = qq.substr(chk.length() + 1, f_ - chk.length() - 1); //#
 					}
+
+					if (!qp[0]) { //<x:> <x-> <x >
+						if (qq[f_ - 1] == ':' || qq[f_ - 1] == '-' || qq[f_ - 1] == ' ') {
+							auto v = qq.substr(0, f_ + 1);
+							connect(v);
+							break;
+						}
+					}
+
 				}
 
 				if (qp[0] == ' ') qp = qp.substr(1);
 
-				if (!chk[0]) chk = qq.substr(0, f + 1); //<test>
+				if (!chk[0]) chk = qq.substr(0, f_ + 1); //<test>
 			}
 			else {
 				qp = L"";
@@ -1561,7 +1562,7 @@ static void scan_db() {
 			case ':':
 				if (qqb(L"<:")) { //cout
 					showOutsMsg(L"", qp, L"", 1);
-					rei();
+					c += f_;
 					break;
 				}
 				else connect(out);
@@ -1571,7 +1572,7 @@ static void scan_db() {
 					if (qp.find('\\') != string::npos) qp = regex_replace(qp, wregex(L"\\\\g"), L">");
 					int s{}; for (auto& x : qp) s += x;
 					auto q = to_wstring(s);	cbSet(q);
-					rei();
+					c += f_;
 				}
 				else connect(out);
 				break;
@@ -1589,7 +1590,12 @@ static void scan_db() {
 					else {
 						if (qq[3] == '!') { multi_.store_ = out; multi_.qq_ = qq; } //!!!
 						qq = v;
-						v = connect(v, 1);
+
+						if (auto it = vstrand_map.find(v.substr(0, v.length() - 1)); it != vstrand_map.end()) {
+							if (ccm) { close_ctrl_mode = !close_ctrl_mode; ccm = 0; }
+							v = replacerDb[0] ? is_replacer(vstrand_out.at(it->second).out) : vstrand_out.at(it->second).out;
+						}
+
 						if (!v[0]) {
 							kb(VK_BACK);
 							sleep(frequency / 2);
@@ -1607,7 +1613,7 @@ static void scan_db() {
 							}
 
 							qq = out;
-							rei();
+							c += f_;
 						}
 					}
 				}
@@ -1615,10 +1621,10 @@ static void scan_db() {
 				break;
 			case '~':
 				if (qqb(L"<~>")) {//manual set xy
-					POINT pt; GetCursorPos(&pt); qxcc = pt.x; qycc = pt.y; rei();
+					POINT pt; GetCursorPos(&pt); qxcc = pt.x; qycc = pt.y; c += f_;
 				}
 				else if (qqb(L"<~~>")) {//manual return xy
-					SetCursorPos(qxcc, qycc); rei();
+					SetCursorPos(qxcc, qycc); c += f_;
 				}
 				else connect(out);
 				break;
@@ -1672,7 +1678,7 @@ static void scan_db() {
 						if (out_speed > 0) out_sleep = 0;
 						ic = multi_.icp_;
 					}
-					else rei();
+					else c += f_;
 				}
 				else connect(out);
 				break;
@@ -1693,7 +1699,7 @@ static void scan_db() {
 					}
 
 					multi_sleep(multi_, ms, n);
-					rei();
+					c += f_;
 				}
 				else connect(out);
 				break;
@@ -1704,7 +1710,7 @@ static void scan_db() {
 						showOutsMsg(L"", qp, L"", 1);
 						cout << '\n';
 					}
-					rei();
+					c += f_;
 					out_sleep = 0;
 					break;
 				}
@@ -1714,23 +1720,23 @@ static void scan_db() {
 			case 'A':
 				switch (qq[2]) {
 				case 'l':
-					if (qqb(L"<alt>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LMENU); rei(); }
-					else if (qqb(L"<alt->")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LMENU); rei(); }
-					else if (qqb(L"<alt")) kb_press(L"<alt", VK_LMENU);
+					if (qqb(L"<alt>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LMENU); c += f_; }
+					else if (qqb(L"<alt~>")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LMENU); c += f_; }
+					else if (qqb(L"<alt")) { kb_press(L"<alt", VK_LMENU); c += f_; }
 					else connect(out);
 					break;
 				case 'p':
 					if (qqb(L"<app>")) {//app title to cb
 						wstring a(getAppT());
 						cbSet(a);
-						rei();
+						c += f_;
 					}
 					else connect(out);
 					break;
 				case 'u':
 					if (qqb(L"<Audio:") || qqb(L"<audio:")) {
 						if (qq[1] == 'A') sndPlaySoundW((qp).c_str(), SND_FILENAME | SND_ASYNC); else mciSendStringW((qp).c_str(), 0, 0, 0); //<audio:play test.mp3>
-						rei();
+						c += f_;
 					}
 					else connect(out);
 					break;
@@ -1739,19 +1745,19 @@ static void scan_db() {
 				}
 				break;
 			case'b':
-				if (qqb(L"<bs")) kb_press(L"<bs", VK_BACK);
+				if (qqb(L"<bs")) { kb_press(L"<bs", VK_BACK); c += f_; }
 				else connect(out);
 				break;
 			case'c':
 				switch (qq[2]) {
 				case 'l':
-					if (qqb(L"<cl>")) { wstring l = cbGet(); l = to_wstring(l.length()); cbSet(l); rei(); }
+					if (qqb(L"<cl>")) { wstring l = cbGet(); l = to_wstring(l.length()); cbSet(l); c += f_; }
 					else connect(out);
 					break;
 				case 't':
-					if (qqb(L"<ctrl>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_CONTROL); rei(); }
-					else if (qqb(L"<ctrl->")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_CONTROL); rei(); }
-					else if (qqb(L"<ctrl")) kb_press(L"<ctrl", VK_CONTROL);
+					if (qqb(L"<ctrl>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_CONTROL); c += f_; }
+					else if (qqb(L"<ctrl~>")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_CONTROL); c += f_; }
+					else if (qqb(L"<ctrl")) { kb_press(L"<ctrl", VK_CONTROL); c += f_; }
 					else connect(out);
 					break;
 				case 'b': //<cb> <cb:> <cb+:> <cb-:>
@@ -1768,12 +1774,12 @@ static void scan_db() {
 							cbSet(qp);
 						}
 						else { kb_hold(VK_CONTROL); kb('v'); kb_release(VK_CONTROL); }
-						rei();
+						c += f_;
 					}
 					else connect(out);
 					break;
 				case 'a':
-					if (qqb(L"<caps")) kb_press(L"<caps", VK_CAPITAL);
+					if (qqb(L"<caps")) { kb_press(L"<caps", VK_CAPITAL); c += f_; }
 					else connect(out);
 					break;
 				default:
@@ -1788,7 +1794,7 @@ static void scan_db() {
 					if (qqb(L"<db:")) {//.h Database:
 						qp = regex_replace(qp, wregex(L"/"), L"\\");
 						wifstream f(qp); if (!f) { f.close(); showOutsMsg(L"", L"\\n\\4Database \\7\\0C\\" + qp + L"\\0C\\\\4 not found!\\7\\n", L"", 1); return; } f.close();
-						rei();
+						c += f_;
 						//append db
 						wstring _ = database;
 						database = qp;
@@ -1807,23 +1813,23 @@ static void scan_db() {
 							}
 							show_fg();
 						}
-						rei();
+						c += f_;
 					}
 					else connect(out);
 					break;
 				case 'o':
-					if (qqb(L"<down")) kb_press(L"<down", VK_DOWN);
+					if (qqb(L"<down")) { kb_press(L"<down", VK_DOWN); c += f_; }
 					else connect(out);
 					break;
 				case 'n':
 					if (qqb(L"<dna:")) {
 						if (qp.find('\\') != string::npos) qp = regex_replace(qp, wregex(L"\\\\\\\\\\\\\\\\g"), L">"); // \\\\g
-						HWND h = GetConsoleWindow(); SetConsoleTitleW(qp.c_str()); rei();
+						HWND h = GetConsoleWindow(); SetConsoleTitleW(qp.c_str()); c += f_;
 					}
 					else connect(out);
 					break;
 				case 'e':
-					if (qqb(L"<delete")) kb_press(L"<delete", VK_DELETE);
+					if (qqb(L"<delete")) { kb_press(L"<delete", VK_DELETE); c += f_; }
 					else connect(out);
 					break;
 				default:
@@ -1833,15 +1839,15 @@ static void scan_db() {
 			case'e':
 				switch (qq[3]) {
 				case 't':
-					if (qqb(L"<enter")) kb_press(L"<enter", VK_RETURN);
+					if (qqb(L"<enter")) { kb_press(L"<enter", VK_RETURN); c += f_; }
 					else connect(out);
 					break;
 				case 'd':
-					if (qqb(L"<end")) kb_press(L"<end", VK_END);
+					if (qqb(L"<end")) { kb_press(L"<end", VK_END); c += f_; }
 					else connect(out);
 					break;
 				case 'c':
-					if (qqb(L"<esc")) kb_press(L"<esc", VK_ESCAPE);
+					if (qqb(L"<esc")) { kb_press(L"<esc", VK_ESCAPE); c += f_; }
 					else connect(out);
 					break;
 				default:
@@ -1851,42 +1857,42 @@ static void scan_db() {
 			case'f':
 				switch (qq[2]) {
 				case '1':
-					if (qqb(L"<f10")) kb_press(L"<f10", VK_F10);
-					else if (qqb(L"<f11")) kb_press(L"<f11", VK_F11);
-					else if (qqb(L"<f12")) kb_press(L"<f12", VK_F12);
-					else if (qqb(L"<f1")) kb_press(L"<f1", VK_F1);
+					if (qqb(L"<f10")) { kb_press(L"<f10", VK_F10); c += f_; }
+					else if (qqb(L"<f11")) { kb_press(L"<f11", VK_F11); c += f_; }
+					else if (qqb(L"<f12")) { kb_press(L"<f12", VK_F12); c += f_; }
+					else if (qqb(L"<f1")) { kb_press(L"<f1", VK_F1); c += f_; }
 					else connect(out);
 					break;
 				case '2':
-					if (qqb(L"<f2")) kb_press(L"<f2", VK_F2);
+					if (qqb(L"<f2")) { kb_press(L"<f2", VK_F2); c += f_; }
 					else connect(out);
 					break;
 				case '3':
-					if (qqb(L"<f3")) kb_press(L"<f3", VK_F3);
+					if (qqb(L"<f3")) { kb_press(L"<f3", VK_F3); c += f_; }
 					else connect(out);
 					break;
 				case '4':
-					if (qqb(L"<f4")) kb_press(L"<f4", VK_F4);
+					if (qqb(L"<f4")) { kb_press(L"<f4", VK_F4); c += f_; }
 					else connect(out);
 					break;
 				case '5':
-					if (qqb(L"<f5")) kb_press(L"<f5", VK_F5);
+					if (qqb(L"<f5")) { kb_press(L"<f5", VK_F5); c += f_; }
 					else connect(out);
 					break;
 				case '6':
-					if (qqb(L"<f6")) kb_press(L"<f6", VK_F6);
+					if (qqb(L"<f6")) { kb_press(L"<f6", VK_F6); c += f_; }
 					else connect(out);
 					break;
 				case '7':
-					if (qqb(L"<f7")) kb_press(L"<f7", VK_F7);
+					if (qqb(L"<f7")) { kb_press(L"<f7", VK_F7); c += f_; }
 					else connect(out);
 					break;
 				case '8':
-					if (qqb(L"<f8")) kb_press(L"<f8", VK_F8);
+					if (qqb(L"<f8")) { kb_press(L"<f8", VK_F8); c += f_; }
 					else connect(out);
 					break;
 				case '9':
-					if (qqb(L"<f9")) kb_press(L"<f9", VK_F9);
+					if (qqb(L"<f9")) { kb_press(L"<f9", VK_F9); c += f_; }
 					else connect(out);
 					break;
 				default:
@@ -1894,7 +1900,7 @@ static void scan_db() {
 				}
 				break;
 			case'h':
-				if (qqb(L"<home")) kb_press(L"<home", VK_HOME);
+				if (qqb(L"<home")) { kb_press(L"<home", VK_HOME); c += f_; }
 				else connect(out);
 				break;
 			case'i':
@@ -2365,7 +2371,7 @@ static void scan_db() {
 						}
 
 						if (tf_T[0] || tf_F[0] || tf[0] && !tf_F[0]) {
-							if (tf_T_continue && multi_.br_ || tf_F_continue && !multi_.br_ || tf_loop) { rei(); multi_.br_ = 0; break; }
+							if (tf_T_continue && multi_.br_ || tf_F_continue && !multi_.br_ || tf_loop) { c += qq.find('>'); multi_.br_ = 0; break; }
 							tf_T = multi_.br_ ? tf_T : tf_F;
 							if (!tf_F[0]) tf_T = tf;//single tf !tf_F[0] case
 							tf_T = tf_T + L">";
@@ -2382,7 +2388,7 @@ static void scan_db() {
 
 						if (!multi_.br_) { c = out.length(); break; }
 
-						rei();
+						c += f_;
 
 						multi_.br_ = 0;
 
@@ -2435,13 +2441,13 @@ static void scan_db() {
 							}
 							c = out.length(); break;
 						}
-						else rei();
+						else c += f_;
 					}
 					else connect(out);
 					}
 					break;
 				case 'n':
-					if (qqb(L"<ins")) kb_press(L"<ins", VK_INSERT);
+					if (qqb(L"<ins")) { kb_press(L"<ins", VK_INSERT); c += f_; }
 					else connect(out);
 					break;
 				default:
@@ -2457,20 +2463,19 @@ static void scan_db() {
 						for (size_t x = 0; x < b.length(); ++x)
 							s += tolower(b[x]);
 						cbSet(s);
-						rei();
+						c += f_;
 					}
 					else connect(out);
 					break;
 				case 'c':
-					if (qqb(L"<lc"))
-						kb_press(L"<lc", VK_F7);//left click
+					if (qqb(L"<lc")) { kb_press(L"<lc", VK_F7); c += f_; }//left click
 					else
 						connect(out);
 					break;
 				case 'h':
 					if (qqb(L"<lh>")) { //left hold
 						mouseEvent(MOUSEEVENTF_LEFTDOWN);
-						rei();
+						c += f_;
 					}
 					else
 						connect(out);
@@ -2478,20 +2483,18 @@ static void scan_db() {
 				case 'r':
 					if (qqb(L"<lr>")) { //left release
 						mouseEvent(MOUSEEVENTF_LEFTUP);
-						rei();
+						c += f_;
 					}
 					else
 						connect(out);
 					break;
 				case 'e':
-					if (qqb(L"<left"))
-						kb_press(L"<left", VK_LEFT);
+					if (qqb(L"<left")) { kb_press(L"<left", VK_LEFT); c += f_; }
 					else
 						connect(out);
 					break;
 				case 's':
-					if (qqb(L"<ls"))
-						kb_press(L"<ls", VK_F7); //hscroll+
+					if (qqb(L"<ls")) { kb_press(L"<ls", VK_F7); c += f_; } //hscroll+
 					else
 						connect(out);
 					break;
@@ -2506,31 +2509,31 @@ static void scan_db() {
 						wstring w = repeats;
 						run(utf8_to_wstring(delimiter));
 						repeats = w;
-						rei();
+						c += f_;
 						if (out_speed > 0) out_sleep = 0;
 					}
 					else connect(out);
 					break;
 				case 'c':
-					if (qqb(L"<mc")) kb_press(L"<mc", VK_F7);//middle click
+					if (qqb(L"<mc")) { kb_press(L"<mc", VK_F7); c += f_; }//middle click
 					else connect(out);
 					break;
 				case 'h':
 					if (qqb(L"<mh>")) {//middle hold
 						mouseEvent(MOUSEEVENTF_MIDDLEDOWN);
-						rei();
+						c += f_;
 					}
 					else connect(out);
 					break;
 				case 'r':
 					if (qqb(L"<mr>")) {//middle release
 						mouseEvent(MOUSEEVENTF_MIDDLEUP);
-						rei();
+						c += f_;
 					}
 					else connect(out);
 					break;
 				case 'e':
-					if (qqb(L"<menu")) kb_press(L"<menu", VK_APPS);
+					if (qqb(L"<menu")) { kb_press(L"<menu", VK_APPS); c += f_; }
 					else connect(out);
 					break;
 				default:
@@ -2540,19 +2543,19 @@ static void scan_db() {
 			case'p':
 				switch (qq[2]) {
 				case 'a':
-					if (qqb(L"<pause")) { kb_press(L"<pause", VK_PAUSE); GetAsyncKeyState(VK_PAUSE); }
+					if (qqb(L"<pause")) { kb_press(L"<pause", VK_PAUSE); c += f_; GetAsyncKeyState(VK_PAUSE); }
 					else connect(out);
 					break;
 				case 's':
-					if (qqb(L"<ps")) kb_press(L"<ps", VK_SNAPSHOT);
+					if (qqb(L"<ps")) { kb_press(L"<ps", VK_SNAPSHOT); c += f_; }
 					else connect(out);
 					break;
 				case 'u':
-					if (qqb(L"<pu")) kb_press(L"<pu", VK_PRIOR);//pgup
+					if (qqb(L"<pu")) { kb_press(L"<pu", VK_PRIOR); c += f_; }//pgup
 					else connect(out);
 					break;
 				case 'd':
-					if (qqb(L"<pd")) kb_press(L"<pd", VK_NEXT);//pgdn
+					if (qqb(L"<pd")) { kb_press(L"<pd", VK_NEXT); c += f_; }//pgdn
 					else connect(out);
 					break;
 				default:
@@ -2567,32 +2570,32 @@ static void scan_db() {
 						if (qq[1] == 'R') showOutsMsg(L"", qp, L"\n", 0);
 						qp = regex_replace(qp, wregex(L"/"), L"\\");
 						replacerDb = qp;
-						rei();
+						c += f_;
 					}
 					else connect(out);
 					break;
 				case 'c':
-					if (qqb(L"<rc")) kb_press(L"<rc", VK_F7); else connect(out);
+					if (qqb(L"<rc")) { kb_press(L"<rc", VK_F7); c += f_; } else connect(out);
 					break;
 				case 'h':
 					if (qqb(L"<rh>")) {//right hold
 						mouseEvent(MOUSEEVENTF_RIGHTDOWN);
-						rei();
+						c += f_;
 					}
 					else connect(out);
 					break;
 				case 'r':
 					if (qqb(L"<rr>")) {//right release
 						mouseEvent(MOUSEEVENTF_RIGHTUP);
-						rei();
+						c += f_;
 					}
 					else connect(out);
 					break;
 				case 'i':
-					if (qqb(L"<right")) kb_press(L"<right", VK_RIGHT); else connect(out);
+					if (qqb(L"<right")) { kb_press(L"<right", VK_RIGHT); c += f_; } else connect(out);
 					break;
 				case 's':
-					if (qqb(L"<rs")) { kb_press(L"<rs", VK_F7); }
+					if (qqb(L"<rs")) { kb_press(L"<rs", VK_F7); c += f_; }
 					else connect(out);//hscroll-
 					break;
 				case 'G':
@@ -2622,7 +2625,7 @@ static void scan_db() {
 							wstring b = regex_replace(cbGet(), wregex(qx), qy);
 							cbSet(b);
 						}
-						rei();
+						c += f_;
 					}
 					else connect(out);
 					break;
@@ -2645,7 +2648,7 @@ static void scan_db() {
 						if (qq[1] == 'S') settings = t;
 						if (_ != database)
 							mvdb = 1;
-						rei();
+						c += f_;
 						break;
 					}
 					else if (qqb(L"<se>") || qqb(L"<SE>")) { 
@@ -2654,40 +2657,40 @@ static void scan_db() {
 							printSe();
 							show_fg();
 						}
-						rei();
+						c += f_;
 					}
 					else connect(out);
 					break;
 				case 'h':
-					if (qqb(L"<shift>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LSHIFT); rei(); }
-					else if (qqb(L"<shift->")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LSHIFT); kb_release(VK_RSHIFT); rei(); }
-					else if (qqb(L"<shift")) kb_press(L"<shift", VK_LSHIFT);
+					if (qqb(L"<shift>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LSHIFT); c += f_; }
+					else if (qqb(L"<shift~>")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LSHIFT); kb_release(VK_RSHIFT); c += f_; }
+					else if (qqb(L"<shift")) { kb_press(L"<shift", VK_LSHIFT); c += f_; }
 					else connect(out);
 					break;
 				case 'p':
 					if (qqb(L"<speed:")) {
 						if (check_if_num(qp, L"<speed: {slot}>") != L"") {
-							out_speed = stoi(qp); rei(); out_sleep = 0;
+							out_speed = stoi(qp); c += f_; out_sleep = 0;
 						}
 						else printq();
 					}
-					else if (qqb(L"<space")) kb_press(L"<space", VK_SPACE);
+					else if (qqb(L"<space")) { kb_press(L"<space", VK_SPACE); c += f_; }
 					else connect(out);
 					break;
 				case 'd':
-					if (qqb(L"<sd")) { kb_press(L"<sd", VK_F7); }//scroll down
+					if (qqb(L"<sd")) { kb_press(L"<sd", VK_F7); c += f_; }//scroll down
 					else connect(out);
 					break;
 				case 'r':
-					if (qqb(L"<sr")) { kb_press(L"<sr", VK_F7); }//scroll right
+					if (qqb(L"<sr")) { kb_press(L"<sr", VK_F7); c += f_; }//scroll right
 					else connect(out);
 					break;
 				case 'u':
-					if (qqb(L"<su")) { kb_press(L"<su", VK_F7); }//scroll up
+					if (qqb(L"<su")) { kb_press(L"<su", VK_F7); c += f_; }//scroll up
 					else connect(out);
 					break;
 				case 'l':
-					if (qqb(L"<sl")) { kb_press(L"<sl", VK_F7); }//scroll left
+					if (qqb(L"<sl")) { kb_press(L"<sl", VK_F7); c += f_; }//scroll left
 					else connect(out);
 					break;
 				default:
@@ -2695,8 +2698,8 @@ static void scan_db() {
 				}
 				break;
 			case 't':
-				if (qqb(L"<tab")) kb_press(L"<tab", VK_TAB);
-				else if (qqb(L"<time>") || qqb(L"<time:")) {
+				if (qqb(L"<tab")) { kb_press(L"<tab", VK_TAB); c += f_; }
+				else if (qqb(L"<time>") || qqb(L"<time~")) {
 					wstring w{}; getTime(w);
 					if (qq[5] == '>') w = w.substr(w.rfind(L" ") - 8, 8);
 					out = w + qq.substr(qq.find('>') + 1, qq.length());
@@ -2706,18 +2709,18 @@ static void scan_db() {
 				else connect(out);
 				break;
 			case 'u':
-				if (qqb(L"<upper>")) { wstring s = L"", c = L""; c = cbGet(); for (size_t x = 0; x < c.length(); ++x) { s += toupper(c[x]); } cbSet(s); rei(); }
-				else if (qqb(L"<up")) kb_press(L"<up", VK_UP);
+				if (qqb(L"<upper>")) { wstring s = L"", cb = L""; cb = cbGet(); for (size_t x = 0; x < cb.length(); ++x) { s += toupper(cb[x]); } cbSet(s); c += f_; }
+				else if (qqb(L"<up")) { kb_press(L"<up", VK_UP); c += f_; }
 				else connect(out);
 				break;
 			case 'v':
-				if (qqb(L"<v>")) { toggle_visibility(); rei(); }
+				if (qqb(L"<v>")) { toggle_visibility(); c += f_; }
 				else connect(out);
 				break;
 			case 'w':
-				if (qqb(L"<win>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LWIN); rei(); }
-				else if (qqb(L"<win->")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LWIN); rei(); }
-				else if (qqb(L"<win")) kb_press(L"<win", VK_LWIN);
+				if (qqb(L"<win>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LWIN); c += f_; }
+				else if (qqb(L"<win~>")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LWIN); c += f_; }
+				else if (qqb(L"<win")) { kb_press(L"<win", VK_LWIN); c += f_; }
 				else connect(out);
 				break;
 			case 'x':
@@ -2743,7 +2746,7 @@ static void scan_db() {
 									
 						}
 						SetCursorPos(stoi(qx), stoi(qy));
-						rei();
+						c += f_;
 					}
 					else if (qqb(L"<xy>")) {//print pointer
 						POINT pt; GetCursorPos(&pt);
@@ -2791,7 +2794,7 @@ static void scan_db() {
 						qq = multi_.qq_;
 						qp = multi_.qp_;
 						c = multi_.c_;
-						rei();
+						c += f_;
 						continue;
 					}
 					else {
@@ -2806,7 +2809,6 @@ static void scan_db() {
 			} //<x>
 			break;
 		default:
-		{
 			//if !"#$%& ()*+ : > ?&AZ ^ _ {|}~
 			if (out[c] == 58
 				|| out[c] < 91 && out[c] > 61
@@ -2824,8 +2826,6 @@ static void scan_db() {
 
 			if (hold_shift)
 				shift_release();
-
-		}
 
 		}
 
@@ -2888,9 +2888,9 @@ static void repeat() {
 		bool s = show_strand; show_strand = 0;
 
 		sleep(frequency / 2);
-		run(L"<alt><esc><alt->");
+		run(L"<alt><esc><alt~>");
 		wstring t = getAppT();
-		run(L"<,><shift><alt><esc><alt-><shift->");
+		run(L"<,><shift><alt><esc><alt~><shift~>");
 		printq();
 		run(L"ifapp~:" + t + L">");
 		repeat_switch = 4;
@@ -3445,7 +3445,7 @@ int main() {
 db
 <db-><wr:>c:\anu\db.txt<enter>
 
-<wr:><win>r<win-><ifapp~:run,6,9>
+<wr:><win>r<win~><ifapp~:run,6,9>
 
 se
 <se ><se>)";
