@@ -393,7 +393,7 @@ static void showOutsMsg(wstring s, wstring w, wstring s1 = L"", bool make_color 
 				break;
 			case 'i': //input
 			if (make_color) {
-				Strand _ = vstrand.at(found_io - 1);
+				Strand _ = vstrand.at(found_io);
 				write(_.in);
 				if (_.in[0] != '<')
 					wcout << _.g;
@@ -897,7 +897,7 @@ static void sleep(unsigned long ms) {
 	this_thread::sleep_for(chrono::milliseconds(ms));
 }
 
-static void kb_press(wstring s, short key) {
+static void kb_press(wstring_view s, short key) {
 	if (!qp[0])
 		qp = L"1";
 	else if (check_if_num(qp, L"<key #>") == L"") { //if (qp[0] < '0' || qp[0] > '9' || )
@@ -947,12 +947,12 @@ static void kb_press(wstring s, short key) {
 
 }
 
-static void setQxQy(wstring x) {
+static void setQxQy(wstring_view x) {
 	size_t q;
 
-	if (x.find(' ') != string::npos) //<xy:# #>
+	if (x.find(' ') != wstring_view::npos) //<xy:# #>
 		q = x.find(' ');
-	else if (x.find(',') != string::npos) //<xy:#,#>
+	else if (x.find(',') != wstring_view::npos) //<xy:#,#>
 		q = x.find(',');
 	else {
 		if (qx[0]) { qx = L"", qy = L""; }
