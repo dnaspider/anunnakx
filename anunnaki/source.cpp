@@ -1021,13 +1021,13 @@ static wstring is_replacer(wstring& q) { // Replacer | {var:} {var-} {var>} | <r
 	return q;
 }
 
-static void connect(wstring& v) {
+static void connect(wstring_view v) {
 	if (auto it = vstrand_map.find(v.substr(0, v.length() - 2)); it != vstrand_map.end()) {
-		if (!follow) follow = 1;
 		out = vstrand_out.at(it->second).out + qq.substr(v.length() + (qq[1] == '!'));
 		if (replacerDb[0]) is_replacer(out);
-		c = -1;
+		if (!follow) follow = 1;
 		if (out_speed > 0) out_sleep = 0;
+		c = -1;
 		return;
 	}
 	printq();
@@ -1064,8 +1064,9 @@ i\>		Use this format to ignore tabs and newlines
 i		Fallthrough
 ii o
 
-<i:>o		Link. Use : or -
-i <i:>
+<i:>o		Link
+i <i:>		Use : or -
+ii <!i:>	Remark. Use !
 
 Use RCTRL, F2, PAUSE, RSHIFT+LSHIFT, or COMMA+ESC after input to run (or to toggle < if no input)
 
@@ -1522,8 +1523,7 @@ static void scan_db() {
 				if (qq[1] == '!') { //<!x:>
 					if (qq[2] != '!' && qq[2] != ':') {
 						if (qq[f_ - 1] == ':' || qq[f_ - 1] == '-' || qq[f_ - 1] == ' ') { //<!x:> <!x-> <!x >
-							auto v = L"<" + qq.substr(2, f_ - 1); //<!x:> to <x:>
-							connect(v);
+							connect(wstring(L"<") + qq.substr(2, f_ - 1)); //<!x:> to <x:>
 							break;
 						}
 					}
@@ -1548,8 +1548,7 @@ static void scan_db() {
 
 					if (!qp[0]) { //<x:> <x-> <x >
 						if (qq[f_ - 1] == ':' || qq[f_ - 1] == '-' || qq[f_ - 1] == ' ') {
-							auto v = qq.substr(0, f_ + 1);
-							connect(v);
+							connect(qq.substr(0, f_ + 1));
 							break;
 						}
 					}
@@ -1573,7 +1572,7 @@ static void scan_db() {
 					c += f_;
 					break;
 				}
-				else connect(out);
+				else printq();
 				break;
 			case '#':
 				if (qqb(L"<#:")) { //ascii_calc
@@ -1582,7 +1581,7 @@ static void scan_db() {
 					auto q = to_wstring(s);	cbSet(q);
 					c += f_;
 				}
-				else connect(out);
+				else printq();
 				break;
 			case '!':
 				if (qqb(L"<!:")) { //set strand
@@ -1625,7 +1624,7 @@ static void scan_db() {
 						}
 					}
 				}
-				else connect(out);
+				else printq();
 				break;
 			case '~':
 				if (qqb(L"<~>")) {//manual set xy
@@ -1634,7 +1633,7 @@ static void scan_db() {
 				else if (qqb(L"<~~>")) {//manual return xy
 					SetCursorPos(qxcc, qycc); c += f_;
 				}
-				else connect(out);
+				else printq();
 				break;
 			case'+': //calc
 			case'-':
@@ -1645,7 +1644,7 @@ static void scan_db() {
 					if (qq[3] == ' ') { //<+: #>
 						wstring cb = cbGet();
 						wstring e = cb;
-						if (!e[0] || check_if_num(e, L"clipboard") == L"") { connect(out); continue; }
+						if (!e[0] || check_if_num(e, L"clipboard") == L"") { printq(); continue; }
 						multi_.icp_ = stod(cb);
 					}
 
@@ -1653,13 +1652,13 @@ static void scan_db() {
 					wstring e = qp;
 					if (qq[2] == '>' && qq[1] == '+') b = 1; //<+>
 					else if (check_if_num(qp, qq.substr(0, qq.find('>')) + L">") == L"") {
-						connect(out);
+						printq();
 						continue;
 					}
 
 					if (b) {}
 					else {
-						if (qq[2] != ':') { connect(out); continue; }
+						if (qq[2] != ':') { printq(); continue; }
 						switch (qq[1]) {
 						case'+': multi_.icp_ += stod(qp); break; // <+:>
 						case'-': multi_.icp_ -= stod(qp); break;
@@ -1688,7 +1687,7 @@ static void scan_db() {
 					}
 					else c += f_;
 				}
-				else connect(out);
+				else printq();
 				break;
 			case ',':
 				if (qqb(L"<,")) { //<,#>
@@ -1709,7 +1708,7 @@ static void scan_db() {
 					multi_sleep(multi_, ms, n);
 					c += f_;
 				}
-				else connect(out);
+				else printq();
 				break;
 			case'\'':
 				if (qqb(L"<'")) { //<'comments>
@@ -1722,7 +1721,7 @@ static void scan_db() {
 					out_sleep = 0;
 					break;
 				}
-				else connect(out);
+				else printq();
 				break;
 			case'a':
 			case 'A':
@@ -1731,7 +1730,7 @@ static void scan_db() {
 					if (qqb(L"<alt>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LMENU); c += f_; }
 					else if (qqb(L"<alt~>")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LMENU); c += f_; }
 					else if (qqb(L"<alt")) { kb_press(L"<alt", VK_LMENU); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case 'p':
 					if (qqb(L"<app>")) {//app title to cb
@@ -1739,34 +1738,34 @@ static void scan_db() {
 						cbSet(a);
 						c += f_;
 					}
-					else connect(out);
+					else printq();
 					break;
 				case 'u':
 					if (qqb(L"<Audio:") || qqb(L"<audio:")) {
 						if (qq[1] == 'A') sndPlaySoundW((qp).c_str(), SND_FILENAME | SND_ASYNC); else mciSendStringW((qp).c_str(), 0, 0, 0); //<audio:play test.mp3>
 						c += f_;
 					}
-					else connect(out);
+					else printq();
 					break;
 				default:
-					connect(out);
+					printq();
 				}
 				break;
 			case'b':
 				if (qqb(L"<bs")) { kb_press(L"<bs", VK_BACK); c += f_; }
-				else connect(out);
+				else printq();
 				break;
 			case'c':
 				switch (qq[2]) {
 				case 'l':
 					if (qqb(L"<cl>")) { wstring l = cbGet(); l = to_wstring(l.length()); cbSet(l); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case 't':
 					if (qqb(L"<ctrl>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_CONTROL); c += f_; }
 					else if (qqb(L"<ctrl~>")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_CONTROL); c += f_; }
 					else if (qqb(L"<ctrl")) { kb_press(L"<ctrl", VK_CONTROL); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case 'b': //<cb> <cb:> <cb+:> <cb-:>
 					if (qq[3] == '>' || qp[0] && (chk == L"<cb:" || chk == L"<cb+:" || chk == L"<cb-:")) {
@@ -1784,14 +1783,14 @@ static void scan_db() {
 						else { kb_hold(VK_CONTROL); kb('v'); kb_release(VK_CONTROL); }
 						c += f_;
 					}
-					else connect(out);
+					else printq();
 					break;
 				case 'a':
 					if (qqb(L"<caps")) { kb_press(L"<caps", VK_CAPITAL); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				default:
-					connect(out);
+					printq();
 				}
 				break;
 			case'd':
@@ -1823,43 +1822,43 @@ static void scan_db() {
 						}
 						c += f_;
 					}
-					else connect(out);
+					else printq();
 					break;
 				case 'o':
 					if (qqb(L"<down")) { kb_press(L"<down", VK_DOWN); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case 'n':
 					if (qqb(L"<dna:")) {
 						if (qp.find('\\') != string::npos) qp = regex_replace(qp, wregex(L"\\\\\\\\\\\\\\\\g"), L">"); // \\\\g
 						HWND h = GetConsoleWindow(); SetConsoleTitleW(qp.c_str()); c += f_;
 					}
-					else connect(out);
+					else printq();
 					break;
 				case 'e':
 					if (qqb(L"<delete")) { kb_press(L"<delete", VK_DELETE); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				default:
-					connect(out);
+					printq();
 				}
 				break;
 			case'e':
 				switch (qq[3]) {
 				case 't':
 					if (qqb(L"<enter")) { kb_press(L"<enter", VK_RETURN); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case 'd':
 					if (qqb(L"<end")) { kb_press(L"<end", VK_END); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case 'c':
 					if (qqb(L"<esc")) { kb_press(L"<esc", VK_ESCAPE); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				default:
-					connect(out);
+					printq();
 				}
 				break;
 			case'f':
@@ -1869,47 +1868,47 @@ static void scan_db() {
 					else if (qqb(L"<f11")) { kb_press(L"<f11", VK_F11); c += f_; }
 					else if (qqb(L"<f12")) { kb_press(L"<f12", VK_F12); c += f_; }
 					else if (qqb(L"<f1")) { kb_press(L"<f1", VK_F1); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case '2':
 					if (qqb(L"<f2")) { kb_press(L"<f2", VK_F2); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case '3':
 					if (qqb(L"<f3")) { kb_press(L"<f3", VK_F3); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case '4':
 					if (qqb(L"<f4")) { kb_press(L"<f4", VK_F4); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case '5':
 					if (qqb(L"<f5")) { kb_press(L"<f5", VK_F5); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case '6':
 					if (qqb(L"<f6")) { kb_press(L"<f6", VK_F6); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case '7':
 					if (qqb(L"<f7")) { kb_press(L"<f7", VK_F7); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case '8':
 					if (qqb(L"<f8")) { kb_press(L"<f8", VK_F8); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case '9':
 					if (qqb(L"<f9")) { kb_press(L"<f9", VK_F9); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				default:
-					connect(out);
+					printq();
 				}
 				break;
 			case'h':
 				if (qqb(L"<home")) { kb_press(L"<home", VK_HOME); c += f_; }
-				else connect(out);
+				else printq();
 				break;
 			case'i':
 				switch (qq[2]) {
@@ -1935,8 +1934,6 @@ static void scan_db() {
 					}
 					if (_) {
 #pragma region ifinit
-						if (!qp[0]) { connect(out); break; }
-
 						wstring t{};
 						wstring a{};
 						wstring x{};
@@ -2379,12 +2376,14 @@ static void scan_db() {
 						}
 
 						if (tf_T[0] || tf_F[0] || tf[0] && !tf_F[0]) {
-							if (tf_T_continue && multi_.br_ || tf_F_continue && !multi_.br_ || tf_loop) { c += qq.find('>'); multi_.br_ = 0; break; }
+							if (tf_T_continue && multi_.br_ || tf_F_continue && !multi_.br_ || tf_loop) { c += f_; multi_.br_ = 0; break; }
 							tf_T = multi_.br_ ? tf_T : tf_F;
 							if (!tf_F[0]) tf_T = tf;//single tf !tf_F[0] case
 							tf_T = tf_T + L">";
 							if (tf_T_link && multi_.br_ || tf_F_link && !multi_.br_ || !tf_F[0] && tf_F_link) tf_T = L"<" + tf_T;
-							wstring l = qq.substr(qq.find('>') + 1);
+							
+							wstring l = qq.substr(f_ + 1);
+							if (tf_T[1] == '!') tf_T = wstring(L"<") + tf_T.substr(2);
 							qq = tf_T;
 							connect(tf_T);
 							out = tf_T_link_plus_connect && multi_.br_ || tf_F_link_plus_connect && !multi_.br_ || !tf_F[0] && tf_F_link_plus_connect ? tf_T + l : tf_T;
@@ -2404,7 +2403,7 @@ static void scan_db() {
 					//qqb(L"<if+")
 					else if (qp[0] && chk == qq.substr(0, chk.length())) {//<if+:> | stop if <+>
 						wstring x = qp.substr(0, qp.find(' '));
-						if (check_if_num(x) == L"" || !qp[0]) { connect(out); break; }
+						if (check_if_num(x) == L"" || !qp[0]) { printq(); break; }
 
 						bool b = 0; int q = stoi(qp.substr(0, qp.find(' ')));
 						wstring l = L""; if (qp.find(' ') != string::npos) l = qp.substr(qp.find(' ') + 1);//<if+:# true:>
@@ -2451,15 +2450,15 @@ static void scan_db() {
 						}
 						else c += f_;
 					}
-					else connect(out);
+					else printq();
 					}
 					break;
 				case 'n':
 					if (qqb(L"<ins")) { kb_press(L"<ins", VK_INSERT); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				default:
-					connect(out);
+					printq();
 				}
 				break;
 			case'l':
@@ -2473,41 +2472,36 @@ static void scan_db() {
 						cbSet(s);
 						c += f_;
 					}
-					else connect(out);
+					else printq();
 					break;
 				case 'c':
 					if (qqb(L"<lc")) { kb_press(L"<lc", VK_F7); c += f_; }//left click
-					else
-						connect(out);
+					else printq();
 					break;
 				case 'h':
 					if (qqb(L"<lh>")) { //left hold
 						mouseEvent(MOUSEEVENTF_LEFTDOWN);
 						c += f_;
 					}
-					else
-						connect(out);
+					else printq();
 					break;
 				case 'r':
 					if (qqb(L"<lr>")) { //left release
 						mouseEvent(MOUSEEVENTF_LEFTUP);
 						c += f_;
 					}
-					else
-						connect(out);
+					else printq();
 					break;
 				case 'e':
 					if (qqb(L"<left")) { kb_press(L"<left", VK_LEFT); c += f_; }
-					else
-						connect(out);
+					else printq();
 					break;
 				case 's':
 					if (qqb(L"<ls")) { kb_press(L"<ls", VK_F7); c += f_; } //hscroll+
-					else
-						connect(out);
+					else printq();
 					break;
 				default:
-					connect(out);
+					printq();
 				}
 				break;
 			case'm':
@@ -2520,54 +2514,54 @@ static void scan_db() {
 						c += f_;
 						if (out_speed > 0) out_sleep = 0;
 					}
-					else connect(out);
+					else printq();
 					break;
 				case 'c':
 					if (qqb(L"<mc")) { kb_press(L"<mc", VK_F7); c += f_; }//middle click
-					else connect(out);
+					else printq();
 					break;
 				case 'h':
 					if (qqb(L"<mh>")) {//middle hold
 						mouseEvent(MOUSEEVENTF_MIDDLEDOWN);
 						c += f_;
 					}
-					else connect(out);
+					else printq();
 					break;
 				case 'r':
 					if (qqb(L"<mr>")) {//middle release
 						mouseEvent(MOUSEEVENTF_MIDDLEUP);
 						c += f_;
 					}
-					else connect(out);
+					else printq();
 					break;
 				case 'e':
 					if (qqb(L"<menu")) { kb_press(L"<menu", VK_APPS); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				default:
-					connect(out);
+					printq();
 				}
 				break;
 			case'p':
 				switch (qq[2]) {
 				case 'a':
 					if (qqb(L"<pause")) { kb_press(L"<pause", VK_PAUSE); c += f_; GetAsyncKeyState(VK_PAUSE); }
-					else connect(out);
+					else printq();
 					break;
 				case 's':
 					if (qqb(L"<ps")) { kb_press(L"<ps", VK_SNAPSHOT); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case 'u':
 					if (qqb(L"<pu")) { kb_press(L"<pu", VK_PRIOR); c += f_; }//pgup
-					else connect(out);
+					else printq();
 					break;
 				case 'd':
 					if (qqb(L"<pd")) { kb_press(L"<pd", VK_NEXT); c += f_; }//pgdn
-					else connect(out);
+					else printq();
 					break;
 				default:
-					connect(out);
+					printq();
 				}
 				break;
 			case'R':
@@ -2580,31 +2574,31 @@ static void scan_db() {
 						replacerDb = qp;
 						c += f_;
 					}
-					else connect(out);
+					else printq();
 					break;
 				case 'c':
-					if (qqb(L"<rc")) { kb_press(L"<rc", VK_F7); c += f_; } else connect(out);
+					if (qqb(L"<rc")) { kb_press(L"<rc", VK_F7); c += f_; } else printq();
 					break;
 				case 'h':
 					if (qqb(L"<rh>")) {//right hold
 						mouseEvent(MOUSEEVENTF_RIGHTDOWN);
 						c += f_;
 					}
-					else connect(out);
+					else printq();
 					break;
 				case 'r':
 					if (qqb(L"<rr>")) {//right release
 						mouseEvent(MOUSEEVENTF_RIGHTUP);
 						c += f_;
 					}
-					else connect(out);
+					else printq();
 					break;
 				case 'i':
-					if (qqb(L"<right")) { kb_press(L"<right", VK_RIGHT); c += f_; } else connect(out);
+					if (qqb(L"<right")) { kb_press(L"<right", VK_RIGHT); c += f_; } else printq();
 					break;
 				case 's':
 					if (qqb(L"<rs")) { kb_press(L"<rs", VK_F7); c += f_; }
-					else connect(out);//hscroll-
+					else printq();//hscroll-
 					break;
 				case 'G':
 				case 'g':
@@ -2613,7 +2607,7 @@ static void scan_db() {
 						if (out[0]) c = -1;
 						if (out_speed > 0) out_sleep = 0;
 					}
-					else connect(out);
+					else printq();
 					break;
 				case 'e':
 					if (qqb(L"<replace:")) {
@@ -2635,10 +2629,10 @@ static void scan_db() {
 						}
 						c += f_;
 					}
-					else connect(out);
+					else printq();
 					break;
 				default:
-					connect(out);
+					printq();
 				}
 				break;
 			case 's':
@@ -2667,13 +2661,13 @@ static void scan_db() {
 						}
 						c += f_;
 					}
-					else connect(out);
+					else printq();
 					break;
 				case 'h':
 					if (qqb(L"<shift>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LSHIFT); c += f_; }
 					else if (qqb(L"<shift~>")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LSHIFT); kb_release(VK_RSHIFT); c += f_; }
 					else if (qqb(L"<shift")) { kb_press(L"<shift", VK_LSHIFT); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case 'p':
 					if (qqb(L"<speed:")) {
@@ -2683,26 +2677,26 @@ static void scan_db() {
 						else printq();
 					}
 					else if (qqb(L"<space")) { kb_press(L"<space", VK_SPACE); c += f_; }
-					else connect(out);
+					else printq();
 					break;
 				case 'd':
 					if (qqb(L"<sd")) { kb_press(L"<sd", VK_F7); c += f_; }//scroll down
-					else connect(out);
+					else printq();
 					break;
 				case 'r':
 					if (qqb(L"<sr")) { kb_press(L"<sr", VK_F7); c += f_; }//scroll right
-					else connect(out);
+					else printq();
 					break;
 				case 'u':
 					if (qqb(L"<su")) { kb_press(L"<su", VK_F7); c += f_; }//scroll up
-					else connect(out);
+					else printq();
 					break;
 				case 'l':
 					if (qqb(L"<sl")) { kb_press(L"<sl", VK_F7); c += f_; }//scroll left
-					else connect(out);
+					else printq();
 					break;
 				default:
-					connect(out);
+					printq();
 				}
 				break;
 			case 't':
@@ -2714,22 +2708,22 @@ static void scan_db() {
 					c = -1;
 					if (out_speed > 0) out_sleep = 0;
 				}
-				else connect(out);
+				else printq();
 				break;
 			case 'u':
 				if (qqb(L"<upper>")) { wstring s = L"", cb = L""; cb = cbGet(); for (size_t x = 0; x < cb.length(); ++x) { s += toupper(cb[x]); } cbSet(s); c += f_; }
 				else if (qqb(L"<up")) { kb_press(L"<up", VK_UP); c += f_; }
-				else connect(out);
+				else printq();
 				break;
 			case 'v':
 				if (qqb(L"<v>")) { toggle_visibility(); c += f_; }
-				else connect(out);
+				else printq();
 				break;
 			case 'w':
 				if (qqb(L"<win>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LWIN); c += f_; }
 				else if (qqb(L"<win~>")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LWIN); c += f_; }
 				else if (qqb(L"<win")) { kb_press(L"<win", VK_LWIN); c += f_; }
-				else connect(out);
+				else printq();
 				break;
 			case 'x':
 				switch (qq[2]) {
@@ -2762,10 +2756,10 @@ static void scan_db() {
 						c = -1;
 						if (out_speed > 0) out_sleep = 0;
 					}
-					else connect(out);
+					else printq();
 					break;
 				default:
-					connect(out);
+					printq();
 				}
 				break;
 			case 'y':
@@ -2810,10 +2804,10 @@ static void scan_db() {
 						break;
 					}
 				}
-				else connect(out);
+				else printq();
 				break;
 			default:
-				connect(out);
+				printq();
 			} //<x>
 			break;
 		default:
