@@ -35,6 +35,7 @@ struct wstring_hash {
 };
 
 #pragma region globals
+unordered_map<wstring, size_t, wstring_hash, equal_to<>> vstrand_map;
 wstring&& Kb_Key_A = L"a", Kb_Key_B = L"b", Kb_Key_C = L"c", Kb_Key_D = L"d", Kb_Key_E = L"e", Kb_Key_F = L"f", Kb_Key_G = L"g", Kb_Key_H = L"h", Kb_Key_I = L"i", Kb_Key_J = L"j", Kb_Key_K = L"k", Kb_Key_L = L"l", Kb_Key_M = L"m", Kb_Key_N = L"n", Kb_Key_O = L"o", Kb_Key_P = L"p", Kb_Key_Q = L"q", Kb_Key_R = L"r", Kb_Key_S = L"s", Kb_Key_T = L"t", Kb_Key_U = L"u", Kb_Key_V = L"v", Kb_Key_W = L"w", Kb_Key_X = L"x", Kb_Key_Y = L"y", Kb_Key_Z = L"z",
 Kb_Key_0 = L"0", Kb_Key_1 = L"1", Kb_Key_2 = L"2", Kb_Key_3 = L"3", Kb_Key_4 = L"4", Kb_Key_5 = L"5", Kb_Key_6 = L"6", Kb_Key_7 = L"7", Kb_Key_8 = L"8", Kb_Key_9 = L"9",
 Kb_Key_F1 = L"", Kb_Key_F2 = L">", Kb_Key_F3 = L"", Kb_Key_F4 = L"", Kb_Key_F5 = L"", Kb_Key_F6 = L"", Kb_Key_F7 = L"", Kb_Key_F8 = L"", Kb_Key_F9 = L"", Kb_Key_F10 = L"", Kb_Key_F11 = L"", Kb_Key_F12 = L"",
@@ -58,7 +59,6 @@ wstring chk = L"";
 string delimiter = "\n"; //°";
 vector<Strand> vstrand{};
 vector<Strand_out> vstrand_out{};
-unordered_map<wstring, size_t, wstring_hash, equal_to<>> vstrand_map;
 size_t c = 0;
 size_t found_io = 0, found_io_repeat = 0;
 ctp c1{}, c2{}; //CtrlKey elapsed
@@ -1567,10 +1567,9 @@ static void scan_db() {
 
 			switch (qq[1]) {
 			case ':':
-				if (qqb(L"<:")) { //cout
+				if (qqb(L"<:") && qp[0]) { //cout
 					showOutsMsg(L"", qp, L"", 1);
 					c += f_;
-					break;
 				}
 				else printq();
 				break;
@@ -1590,39 +1589,30 @@ static void scan_db() {
 					return;
 				}
 				else if (qqb(L"<!!:") || qqb(L"<!!!:")) { //set repeat
-					wstring v = qq.substr(qq.find(':') + 1);
-					v = v.substr(0, v.find('>'));
-					if (qq[qq.find(':') + 1] != '<')
-						num_error(L"Not a link", v, L"VALUE:");
-					else {
-						if (qq[3] == '!') { multi_.store_ = out; multi_.qq_ = qq; } //!!!
-						qq = v;
-
-						if (auto it = vstrand_map.find(v.substr(0, v.length() - 1)); it != vstrand_map.end()) {
-							if (ccm) { close_ctrl_mode = !close_ctrl_mode; ccm = 0; }
-							v = replacerDb[0] ? is_replacer(vstrand_out.at(it->second).out) : vstrand_out.at(it->second).out;
-						}
-
-						if (!v[0]) {
-							kb(VK_BACK);
-							sleep(frequency / 2);
-							num_error(L"No output", qq, L"VALUE:");
-						}
-						else {
-							repeats = v;
-
-							if (multi_.store_[0]) { //!!! run
-								multi_.c_ = c;
-								repeat();
-								sleep(1);
-								out = multi_.store_.substr(multi_.c_);
-								c = 0;
-							}
-
-							qq = out;
-							c += f_;
-						}
+					
+					if (auto it = vstrand_map.find(qp.substr(0, qp.length() - 1)); it != vstrand_map.end()) {
+						if (ccm) { close_ctrl_mode = !close_ctrl_mode; ccm = 0; }
+						qp = replacerDb[0] ? is_replacer(vstrand_out.at(it->second).out) : vstrand_out.at(it->second).out;
 					}
+					else {
+						//num_error(L"No output", qp, L"VALUE:");
+						c += out.length();
+						continue;
+					}
+						
+					if (qq[3] == '!') multi_.store_ = out; //!!!
+					repeats = qp;
+
+					if (multi_.store_[0]) { //!!! run
+						multi_.c_ = c;
+						repeat();
+						sleep(1);
+						qq = out = multi_.store_.substr(multi_.c_);
+						multi_.store_ = L"";
+						c = 0;
+					}
+
+					c += f_;
 				}
 				else printq();
 				break;
