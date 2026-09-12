@@ -2362,7 +2362,8 @@ static void scan_db() {
 						}
 
 						if (tf_T[0] || tf_F[0] || tf[0] && !tf_F[0]) {
-							if (tf_T_continue && multi_.br_ || tf_F_continue && !multi_.br_ || tf_loop) { c += f_; multi_.br_ = 0; break; }
+							if (tf_T_continue && multi_.br_ || tf_F_continue && !multi_.br_ || tf_loop || !tf_F[0] && multi_.br_) { c += f_; multi_.br_ = 0; break; }
+
 							tf_T = multi_.br_ ? tf_T : tf_F;
 							if (!tf_F[0]) tf_T = tf;//single tf !tf_F[0] case
 							tf_T = tf_T + L">";
@@ -2372,7 +2373,7 @@ static void scan_db() {
 							if (tf_T[1] == '!') tf_T = wstring(L"<") + tf_T.substr(2);
 							qq = tf_T;
 							connect(tf_T);
-							out = tf_T_link_plus_connect && multi_.br_ || tf_F_link_plus_connect && !multi_.br_ || !tf_F[0] && tf_F_link_plus_connect ? tf_T + l : tf_T;
+							if (tf_T_link_plus_connect && multi_.br_ || tf_F_link_plus_connect && !multi_.br_ || !tf_F[0] && tf_F_link_plus_connect) out += l;
 									
 							multi_.br_ = 0;
 
