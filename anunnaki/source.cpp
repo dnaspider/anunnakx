@@ -1018,16 +1018,14 @@ static wstring is_replacer(wstring& q) { // Replacer | {var:} {var-} {var>} | <r
 	return q;
 }
 
-static void connect(wstring_view v) {
+static void connect(const wstring_view v) {
 	if (auto it = vstrand_map.find(v.substr(0, v.length() - 2)); it != vstrand_map.end()) {
 		out = vstrand_out.at(it->second).out + qq.substr(v.length() + (qq[1] == '!'));
 		if (replacerDb[0]) is_replacer(out);
-		if (out_speed > 0) out_sleep = 0;
+		if (out_speed) out_sleep = 0;
 		c = -1;
-		return;
 	}
-	printq();
-	return;
+	else printq();
 }
 
 static bool qqb(const wstring s) {
@@ -1263,6 +1261,7 @@ Manual controls
 <cb+:>		Append
 <cb-:>		Prepend
 <cl>		Length
+<cr>		Run
 
 Misc.
 \\\\g		Inside <ifapp:>... for >
@@ -1743,6 +1742,10 @@ static void scan_db() {
 				break;
 			case'c':
 				switch (qq[2]) {
+				case 'r': //cb run
+					if (qqb(L"<cr>")) { out.clear(); out.append(cbGet() + qq.substr(4)) ; c = -1; }
+					else printq();
+					break;
 				case 'l':
 					if (qqb(L"<cl>")) { wstring l = cbGet(); l = to_wstring(l.length()); cbSet(l); c += f_; }
 					else printq();
