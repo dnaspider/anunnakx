@@ -969,7 +969,7 @@ static wstring is_replacer(wstring& q) { // Replacer | {var:} {var-} {var>} | <r
 		wstring tqg = q, tq{};
 		GetAsyncKeyState(VK_ESCAPE);
 		while (tqg.find('{') != string::npos) {
-			if (GetAsyncKeyState(VK_ESCAPE)) stop = 1;
+			if (GetAsyncKeyState(VK_ESCAPE)) { stop = 1; break; }
 			q = q.substr(q.find('{') + 1);
 			q = q.substr(0, q.find(L'}'));
 			tq = q;
@@ -983,11 +983,11 @@ static wstring is_replacer(wstring& q) { // Replacer | {var:} {var-} {var>} | <r
 						k = q.substr(0, q.find_first_of(L" -:>"));
 					if (auto it = vstrand_map.find(k); it != vstrand_map.end() && q.ends_with(vstrand.at(it->second).g) && q.length() == k.length() + vstrand.at(it->second).g.length())
 						q = vstrand_out.at(it->second).out;
+					else
+						q = L"";
 				}
-				else {
-					q = tqg;
-					return q;
-				}
+				else
+					q = L"";
 			}
 			if (!q[0]) {
 				tqg.replace(tqg.find('{'), 1, L"::_::"); q = tqg;
