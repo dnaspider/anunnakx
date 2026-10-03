@@ -56,15 +56,19 @@ wstring qq = L"", qp = L"", qx = L"", qy = L"";
 wstring repeats = L"";
 wstring out = L"";
 wstring chk = L"";
+wstring unlock_key = L"60 01"; //60: scan code for F2, 0: (optional) no backspace, 1: press once to unlock RSHIFTLSHIFT_Only / L+ESC; press again to run or auto lock
 string delimiter = "\n"; //°";
 vector<Strand> vstrand{};
 vector<Strand_out> vstrand_out{};
+vector<wstring> strand_v{};
 size_t c = 0;
 size_t found_io = 0, found_io_repeat = 0;
 ctp c1{}, c2{}; //CtrlKey elapsed
 double RgbScaleLayout = 1.00; //100%
 double ic = 0; //<+> icp
 int qxcc = 0, qycc = 0;
+short unlock_it = 1;
+unsigned short unlock_sc{60}, ul{};
 unsigned short out_speed = 0;
 unsigned short frequency = 160;
 unsigned short strand_length = 2;
@@ -78,6 +82,8 @@ unsigned short mvdb = 0; //make vstrand to
 
 unsigned short breaker{}, breaker_c{};
 unsigned short clear{};
+bool uit0{}; //unlock_key unlock_it[0] is 0
+bool isUnlockPressed{};
 bool isWinKeyPressed{};
 bool isLshiftPressed{};
 bool isRshiftPressed{};
@@ -472,6 +478,25 @@ static void load_settings() {
 			}
 			break;
 		}
+		case 975://UnlockKey: (RSHIFT+LSHIFT_Only)
+		{
+			unlock_key = v;
+			uit0 = unlock_key.find(' ') != string::npos && unlock_key[unlock_key.find(' ') + 1] != '0';
+			unlock_it = 1;
+			if (!v[0]) { unlock_sc = 0; break; }
+			if (v.find(' ') != string::npos) {
+				qx = v.substr(0, v.find(' '));
+				qy = v.substr(v.find(' ') + 1);
+				if (check_if_num(qx) > L"" && check_if_num(qy) > L"") {
+					unlock_sc = stoi(qx);
+					unlock_it = stoi(qy);
+				}
+				else er();
+			}
+			else if (check_if_num(v) > L"") unlock_sc = stoi(v);
+			else er();
+		} 
+		break;
 		case 1536://RSHIFT+LSHIFT_Only:
 		{ if (check_if_num(v) > L"") { RSHIFTLSHIFT_Only = stoi(v); rri = 0; } else er(); } break;
 		case 1972://RSHIFT+CtrlKey_Toggle:
@@ -744,6 +769,7 @@ static void printSe() {
 	cout << "RSHIFT+CtrlKey_Toggle: " << RSHIFTCtrlKeyToggle << '\n';
 	cout << "CtrlScanOnlyMode: " << ctrl_scan_only_mode << '\n';
 	cout << "RSHIFT+LSHIFT_Only: " << RSHIFTLSHIFT_Only << '\n';
+	wcout << "UnlockKey: " << unlock_key << '\n';
 	cout << "RepeatKey: " << repeat_key << '\n';
 	cout << "PauseKey: " << PauseKey << '\n';
 	cout << "RgbScaleLayout: " << RgbScaleLayout << '\n';
@@ -1271,13 +1297,31 @@ CTRL+S inside
 [EditorDb]	Rebuild [Database]
 [EditorSe]	Push new settings
 
-[Debug 2]	Assume
+se.txt (settings):
+Debug 2
+0: check if number, 2: no check, 1: scan code (sc)
+
+RSHIFTLSHIFT_Only 2
+0: off, otherwise 1: <, 2: blank input
+
+Unlock_Key 60 02
+60: sc for F2, 0: no backspace (optional), 2: press twice
+
+CtrlKey 29 700
+29: sc for RCTRL, 700: press within duration (ms), 0: disable CtrlKey & RSHIFT+RCTRL & RCTRL+LCTRL
+
+UTF8 1
+0: ASCII
+
+Kb_Key_??? >
+>: run input or toggle <
 
 Set se.txt [ReplacerDb c:\anu\db.txt] for replacer ability
 in {x:}
 x:out
 
-VS Code:	"[plaintext]": { "editor.insertSpaces": false, "editor.detectIndentation": false
+VS Code:
+"[plaintext]": { "editor.insertSpaces": false, "editor.detectIndentation": false
 )"; //Use legacy terminal: WIN + "Terminal settings" > Windows Console Host
 
 }
@@ -1292,6 +1336,7 @@ static void toggle_visibility() {
 		show_fg();
 
 	strand.clear();
+	if (utf_8) strand_v.clear();
 }
 
 static wstring getRGB(unsigned short bg = 0) {
@@ -1416,6 +1461,7 @@ static void close_run() {
 		if (ccm) { close_ctrl_mode = !close_ctrl_mode; ccm = 0; }
 		if (!multi_run) multi_run = 1;
 		if (strand[0]) strand.clear();
+		if (utf_8) strand_v.clear();
 		prints();
 	}
 }
@@ -1580,6 +1626,13 @@ static void scan_db() {
 			case '!':
 				if (qqb(L"<!:")) { //set strand
 					strand = qp;
+					if (utf_8) {
+						for (size_t i = 0; i < strand.length(); ++i) {
+							wstring t = L"";
+							t += strand[0];
+							strand_v.emplace_back(t);
+						}
+					}
 					prints();
 					return;
 				}
@@ -2898,54 +2951,49 @@ static void scan() {
 	scan_db();
 }
 
-static void key(wstring k) {
-	if (k[0] == '>') { //Kb_Key_F2 = ">"
-		if (!strand[0]) k[0] = '<';
-		else if (strand[0] != '<' && strand.length() > 0 || strand.length() > 1)
-			k = '>';
-		else {
-			strand.clear();
+static void key(wstring_view k) {
+
+	if (k == L">") {
+		if (utf_8) strand_v.clear();
+		switch (strand[0]) {
+		case 0:
+			if (utf_8) strand_v.emplace_back(L"<");
+			strand = L"<";
+			break;
+		case '<':
+			strand = L"";
+			break;
+		default:
+			strand.append(k);
 			prints();
+			thread thread(scan); sleep(1); thread.detach();
 			return;
 		}
+
+		prints();
+		return;
 	}
 
+	if (utf_8) strand_v.emplace_back(k);
 	strand.append(k);
 
-	if (k[0] == '>' || !close_ctrl_mode) {
-		//scan_db()
-		if (k[0] == '>') prints();
-		thread thread(scan); thread.detach();
-		if (close_ctrl_mode) return;
-	}
-
-	if (strand_length && strand[0] != '<' && k[0] != '>') {
-		if (strand.length() > strand_length) {
-			if (!utf_8)
-				strand = strand.substr(1);
-			else {
-				if (k[0] > 32 && k[0] < 128 && strand[0] > 32 && strand[0] < 128)
-					strand = strand.substr(1);
-				else {
-					unsigned short bits{}; bool b{};
-
-					for (size_t i = 0; i < strand.length(); ++i) {
-						if ((strand[i] & 0xc0) != 0x80)
-							++bits;
-
-						if (i == 1 && bits == 1)
-							b = 1;
-					}
-
-					if (bits > strand_length)
-						strand = b ? strand.substr(2) : strand.substr(1);
-				}
+	if (strand_length && strand[0] != '<') {
+		if (!utf_8 && strand.length() > strand_length)
+			strand = strand.substr(1);
+		else {
+			if (strand_v.size() > strand_length) {
+				strand = strand.substr(strand_v.at(0).length());
+				strand_v.erase(strand_v.begin());
 			}
 		}
 	}
 
-	if (k[0] != '>')
-		prints();
+	prints();
+
+	if (!close_ctrl_mode) {
+		thread thread(scan); thread.detach();
+	}
+
 }
 
 #pragma endregion
@@ -2998,19 +3046,9 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 					if (!utf_8)
 						strand.pop_back();
 					else {
-						if (strand.length() == 1 || strand[strand.length() - 1] > 32 && strand[strand.length() - 1] < 128 || (strand[strand.length() - 1] & 0xc0) != 0x80)
-							strand.pop_back();
-						else {
-							unsigned short bits{};
-
-							for (size_t i = 0; i < strand.length(); ++i)
-								if ((strand[i] & 0xc0) != 0x80)
-									++bits;
-
-							if (bits == strand.length())
-								strand.pop_back();
-							else
-								strand = strand.substr(0, strand.length() - 2);
+						if (strand[0]) {
+							strand = strand.substr(0, strand.length() - strand_v.at(strand_v.size() - 1).size());
+							strand_v.pop_back();
 						}
 					}
 
@@ -3062,28 +3100,33 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 						kb_release(VK_ESCAPE); kb(VK_BACK);
 						repeat_switch = 1;
 						repeat();
+						if (utf_8) strand_v.clear();
 						return 0;
 					}
 					GetAsyncKeyState('R'); if (GetAsyncKeyState('R')) { //r + esc: <rgb:>
 						kb_release(VK_ESCAPE); kb(VK_BACK);
 						repeat_switch = 2;
 						repeat();
+						if (utf_8) strand_v.clear();
 						return 0;
 					}
 					GetAsyncKeyState('G'); if (GetAsyncKeyState('G')) { //g + esc: <RGB~:> to cb
 						kb_release(VK_ESCAPE); kb(VK_BACK);
 						repeat_switch = 3;
 						repeat();
+						if (utf_8) strand_v.clear();
 						return 0;
 					}
 					GetAsyncKeyState('A'); if (GetAsyncKeyState('A')) { //a + esc: <app:>
 						kb_release(VK_ESCAPE); kb(VK_BACK);
 						repeat_switch = 4;
 						repeat();
+						if (utf_8) strand_v.clear();
 						return 0;
 					}
 					GetAsyncKeyState(VK_OEM_PLUS); if (GetAsyncKeyState(VK_OEM_PLUS)) { //= + esc: repeat
 						kb_release(VK_ESCAPE); kb(VK_BACK);
+						if (utf_8) strand_v.clear();
 						repeat(); return 1;
 					}
 					GetAsyncKeyState(VK_OEM_COMMA); if (GetAsyncKeyState(VK_OEM_COMMA)) { //, + esc
@@ -3096,6 +3139,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 						if (RSHIFTLSHIFT_Only) RSHIFTLSHIFT_Only = 0;
 						else RSHIFTLSHIFT_Only = escL ? escL : 2;
 						strand.clear(); prints();
+						if (utf_8) strand_v.clear();
 						sleep(frequency);
 						return 0;
 					}
@@ -3124,7 +3168,35 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 
 				if (ctrl_scan_only_mode && strand[0] != '<') return 0;
 
-				if (!rri && RSHIFTLSHIFT_Only && !strand[0]) return 0;
+				if (!rri && RSHIFTLSHIFT_Only && !strand[0]) { //L+ESC locked or RSHIFTLSHIFT_Only is 1 or 2
+					if (p->scanCode == unlock_sc) {
+						++ul;
+						if (ul == unlock_it) { //unlock_key pressed unlock_it times to unlock otherwise stay locked
+							ul = 0;
+							++rri;
+							if (unlock_it) {
+								if (uit0)
+									for (auto i = 0; i < unlock_it - 1; ++i)
+										kb(VK_BACK);
+								if (RSHIFTLSHIFT_Only == 1) { //show some feedback if show_input is true
+									strand = L"<";
+									strand_v.emplace_back(strand);
+								}
+								prints();
+							}
+							return uit0;
+						}
+						return 0;
+					}
+					ul = 0;
+					return 0;
+				}
+
+				if (RSHIFTLSHIFT_Only && p->scanCode == unlock_sc) { //if UnlockKey 16 3 || 16 03 
+					isUnlockPressed = 1;
+					if (!uit0) return 1;
+					else break;
+				}
 
 				switch (p->scanCode) {
 				case 30: if (Kb_Key_A[0]) key(Kb_Key_A); return 0;
@@ -3269,6 +3341,24 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 				if (p->scanCode == 91 || p->scanCode == 92) { isWinKeyPressed = 0; return 0; }
 				if (pause || isWinKeyPressed) return 0;
 
+				if (isUnlockPressed) {
+					isUnlockPressed = 0;
+					if (uit0) //backspace if unlock_it doesn't start with a 0
+						kb(VK_BACK);
+
+					if (strand == (RSHIFTLSHIFT_Only == 2 ? L"" : L"<")) { //unlock if nothing
+						rri = 0;
+						strand.clear();
+						strand_v.clear();
+						prints();
+						return 0;
+					}
+
+					rri = 0; //scan if something, then lock
+					key(L">");
+					return 0;
+				}
+
 				++breaker;
 
 				switch (p->scanCode) {
@@ -3311,6 +3401,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 									if (RSHIFTLSHIFT_Only > 1) strand = L"";
 									else strand = strand[0] == '<' ? L"" : L"<";
 								}
+								if (utf_8) { strand_v.clear(); if (strand[0]) strand_v.emplace_back(L"<"); }
 								prints();
 								return 0;
 							}
@@ -3354,6 +3445,8 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 			}
 			if (cs) {
 				strand.clear(); prints();
+				if (utf_8) strand_v.clear();
+
 			}
 			return 0;
 		}
@@ -3379,6 +3472,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 			else if (!strand[0]) { strand = RSHIFTLSHIFT_Only > 1 && rri == 1 ? L"" : L"<"; }
 			else if (RSHIFTLSHIFT_Only > 1) strand = L"";
 			else strand = strand[0] == '<' ? L"" : L"<";
+			if (utf_8) { strand_v.clear(); if (strand[0]) strand_v.emplace_back(L"<"); }
 			prints();
 			clear = 0;
 			return 0;
@@ -3388,6 +3482,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 			//cout << "repeated\n";
 			repeated = 0;
 			repeat();
+			if (utf_8) strand_v.clear();
 			return 0;
 		}
 	}
