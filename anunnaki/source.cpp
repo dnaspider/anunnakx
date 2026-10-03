@@ -2961,12 +2961,15 @@ static void key(wstring_view k) {
 			strand = L"<";
 			break;
 		case '<':
-			strand = L"";
-			break;
+			if (strand == L"<") {
+				strand = L"";
+				break;
+			}
+			[[fallthrough]];
 		default:
 			strand.append(k);
 			prints();
-			thread thread(scan); sleep(1); thread.detach();
+			thread thread(scan); thread.detach();
 			return;
 		}
 
@@ -3192,7 +3195,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 					return 0;
 				}
 
-				if (RSHIFTLSHIFT_Only && p->scanCode == unlock_sc) { //if UnlockKey 16 3 || 16 03 
+				if (RSHIFTLSHIFT_Only && p->scanCode == unlock_sc && strand[0] && strand != L"<") { //if UnlockKey 16 3 || 16 03 
 					isUnlockPressed = 1;
 					if (!uit0) return 1;
 					else break;
@@ -3385,7 +3388,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 							isRctrlPressed = 0;
 							if (repeated) break;
 							
-							if (isRshiftPressed) { if (RSHIFTCtrlKeyToggle && breaker == 1) rshift_rctrl = 1; break; }
+							if (isRshiftPressed) { if (RSHIFTCtrlKeyToggle && breaker == 1) { isRshiftPressed = 0; rshift_rctrl = 1; } break; }
 							
 							clockr(c2);
 							chrono::duration<double, milli> ts = c1 - c2;
