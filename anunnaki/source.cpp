@@ -3177,7 +3177,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 										kb(VK_BACK);
 								if (RSHIFTLSHIFT_Only == 1) {
 									strand = L"<";
-									strand_v.emplace_back(strand);
+									if (utf_8) strand_v.emplace_back(strand);
 								}
 								prints();
 							}
@@ -3194,11 +3194,11 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 					if (!strand[0] || strand == L"<") { //press again to toggle
 						if (!strand[0] && ul < 2) {
 							strand = L"<";
-							strand_v.emplace_back(strand);
+							if (utf_8) strand_v.emplace_back(strand);
 						}
 						else {
 							strand.clear();
-							strand_v.clear();
+							if (utf_8) strand_v.clear();
 							if (ul == 2) { ul = rri = 0; } //lock
 						}
 						prints();
