@@ -56,8 +56,8 @@ wstring qq = L"", qp = L"", qx = L"", qy = L"";
 wstring repeats = L"";
 wstring out = L"";
 wstring chk = L"";
-wstring unlock_key = L"60 01"; //60: scancode for F2, 0: (optional) no backspace, 1: press once to unlock RSHIFTLSHIFT_Only / L+ESC; press again for run>
-string delimiter = "\n"; //°";
+wstring unlock_key = L"60 01"; //se.txt UnlockKey 60 01 | 60: scancode for F2, 0: (optional) no backspace, 1: press once to unlock RSHIFTLSHIFT_Only / L+ESC mode; press again to toggle, run>, or again to lock | Or try QQ `UnlockKey 16 2`
+string delimiter = "\n"; //°
 vector<Strand> vstrand{};
 vector<Strand_out> vstrand_out{};
 vector<wstring> strand_v{};
@@ -498,7 +498,7 @@ static void load_settings() {
 		} 
 		break;
 		case 1536://RSHIFT+LSHIFT_Only:
-		{ if (check_if_num(v) > L"") { RSHIFTLSHIFT_Only = stoi(v); rri = 0; } else er(); } break;
+		{ if (check_if_num(v) > L"") { RSHIFTLSHIFT_Only = stoi(v); ul = rri = 0; } else er(); } break;
 		case 1972://RSHIFT+CtrlKey_Toggle:
 		{ if (check_if_num(v) > L"") RSHIFTCtrlKeyToggle = stoi(v); else er(); } break;
 		case 865://PauseKey:
@@ -1310,12 +1310,6 @@ Unlock_Key 60 02
 CtrlKey 29 700
 29: sc for RCTRL, 700: press within duration (ms), 0: disable CtrlKey & RSHIFT+RCTRL & RCTRL+LCTRL
 
-UTF8 1
-0: ASCII
-
-Kb_Key_??? >
->: run input or toggle <
-
 Set se.txt [ReplacerDb c:\anu\db.txt] for replacer ability
 in {x:}
 x:out
@@ -1455,7 +1449,7 @@ static void multi_sleep(Multi_ &multi_, unsigned long ms, unsigned long n = 1) {
 
 static void close_run() {
 	out_speed = 0;
-	if (RSHIFTLSHIFT_Only) rri = 0;
+	if (RSHIFTLSHIFT_Only) ul = rri = 0;
 	if (ran || strand[0] && strand[strand.length() - 1] == '>') {
 		ran = 0;
 		if (ccm) { close_ctrl_mode = !close_ctrl_mode; ccm = 0; }
@@ -3044,7 +3038,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 				case 54:
 					isRshiftPressed = 1; return 0;
 				case 14: { //Backspace
-					if (!strand[0]) { if (rri) rri = 0; return 0; }
+					if (!strand[0]) { if (rri) ul = rri = 0; return 0; }
 
 					if (!utf_8)
 						strand.pop_back();
@@ -3194,8 +3188,23 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 					ul = 0;
 					return 0;
 				}
-
-				if (RSHIFTLSHIFT_Only && p->scanCode == unlock_sc && strand[0] && strand != L"<") { //if UnlockKey 16 3 || 16 03 
+				
+				if (RSHIFTLSHIFT_Only && p->scanCode == unlock_sc) { //if UnlockKey 16 2 || 16 02 
+					++ul;
+					if (!strand[0] || strand == L"<") { //press again to toggle
+						if (!strand[0] && ul < 2) {
+							strand = L"<";
+							strand_v.emplace_back(strand);
+						}
+						else {
+							strand.clear();
+							strand_v.clear();
+							if (ul == 2) { ul = rri = 0; } //lock
+						}
+						prints();
+						return 1;
+					}
+					ul = 0;
 					isUnlockPressed = 1;
 					if (!uit0) return 1;
 					else break;
@@ -3348,7 +3357,6 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 					isUnlockPressed = 0;
 					if (uit0) //backspace if unlock_it doesn't start with a 0
 						kb(VK_BACK);
-					rri = 0;
 					key(L">");
 					return 0;
 				}
