@@ -56,7 +56,7 @@ wstring qq = L"", qp = L"", qx = L"", qy = L"";
 wstring repeats = L"";
 wstring out = L"";
 wstring chk = L"";
-wstring unlock_key = L"60 01"; //60: scan code for F2, 0: (optional) no backspace, 1: press once to unlock RSHIFTLSHIFT_Only / L+ESC; press again to run or auto lock
+wstring unlock_key = L"60 01"; //60: scancode for F2, 0: (optional) no backspace, 1: press once to unlock RSHIFTLSHIFT_Only / L+ESC; press again for run>
 string delimiter = "\n"; //°";
 vector<Strand> vstrand{};
 vector<Strand_out> vstrand_out{};
@@ -73,9 +73,9 @@ unsigned short out_speed = 0;
 unsigned short frequency = 160;
 unsigned short strand_length = 2;
 unsigned short RSHIFTLSHIFT_Only = 0, rri = 0; //RSHIFTLSHIFT_Only 1 or 2 for L+ESC mode on; 2 for non <
-unsigned short cKey = 29, cKeyMax = 700; // Scan code for VK_RCONTROL, CtrlKey elapsed
-unsigned short repeat_key = 70; // Scan code for VK_SCROLL;
-unsigned short PauseKey = 88; //Scan code for VK_F12
+unsigned short cKey = 29, cKeyMax = 700; //Scancode for VK_RCONTROL, CtrlKey elapsed
+unsigned short repeat_key = 70; //Scancode for VK_SCROLL
+unsigned short PauseKey = 88; //Scancode for VK_F12
 unsigned short repeat_switch = 0;
 unsigned short debug = 0;
 unsigned short mvdb = 0; //make vstrand to
@@ -1299,7 +1299,7 @@ CTRL+S inside
 
 se.txt (settings):
 Debug 2
-0: check if number, 2: no check, 1: scan code (sc)
+0: check if number, 2: no check, 1: show scancode (sc)
 
 RSHIFTLSHIFT_Only 2
 0: off, otherwise 1: <, 2: blank input
@@ -3033,7 +3033,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 
 				if (pause || isWinKeyPressed) return 0;
 
-				if (debug == 1) printf("Scan Code = %d\n", p->scanCode);
+				if (debug == 1) printf("Scancode = %d\n", p->scanCode);
 
 				switch (p->scanCode) {
 				case 91:
@@ -3171,7 +3171,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 
 				if (ctrl_scan_only_mode && strand[0] != '<') return 0;
 
-				if (!rri && RSHIFTLSHIFT_Only && !strand[0]) { //L+ESC locked or RSHIFTLSHIFT_Only is 1 or 2
+				if (RSHIFTLSHIFT_Only && !rri && !strand[0]) { //RSHIFTLSHIFT_Only is 1 or 2 or L+ESC; locked
 					if (p->scanCode == unlock_sc) {
 						++ul;
 						if (ul == unlock_it) { //unlock_key pressed unlock_it times to unlock otherwise stay locked
@@ -3181,7 +3181,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 								if (uit0)
 									for (auto i = 0; i < unlock_it - 1; ++i)
 										kb(VK_BACK);
-								if (RSHIFTLSHIFT_Only == 1) { //show some feedback if show_input is true
+								if (RSHIFTLSHIFT_Only == 1) {
 									strand = L"<";
 									strand_v.emplace_back(strand);
 								}
@@ -3348,16 +3348,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 					isUnlockPressed = 0;
 					if (uit0) //backspace if unlock_it doesn't start with a 0
 						kb(VK_BACK);
-
-					if (strand == (RSHIFTLSHIFT_Only == 2 ? L"" : L"<")) { //unlock if nothing
-						rri = 0;
-						strand.clear();
-						strand_v.clear();
-						prints();
-						return 0;
-					}
-
-					rri = 0; //scan if something, then lock
+					rri = 0;
 					key(L">");
 					return 0;
 				}
