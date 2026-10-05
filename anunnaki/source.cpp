@@ -1449,15 +1449,22 @@ static void multi_sleep(Multi_ &multi_, unsigned long ms, unsigned long n = 1) {
 
 static void close_run() {
 	out_speed = 0;
-	if (RSHIFTLSHIFT_Only) ul = rri = 0;
-	if (ran || strand[0] && strand[strand.length() - 1] == '>') {
-		ran = 0;
-		if (ccm) { close_ctrl_mode = !close_ctrl_mode; ccm = 0; }
-		if (!multi_run) multi_run = 1;
-		if (strand[0]) strand.clear();
+
+	//no hit
+	if (strand[0] && strand[strand.length() - 1] == '>') {
+		if (RSHIFTLSHIFT_Only) ul = rri = 0;
+		if (ccm) { ccm = 0; close_ctrl_mode = !close_ctrl_mode; }
+		
+		strand.clear();
 		if (utf_8) strand_v.clear();
-		prints();
 	}
+
+	if (ran) {
+		ran = 0;
+		if (!multi_run) multi_run = 1;
+	}
+	
+	if (!strand[0]) prints();
 }
 
 static void scan_db() {
@@ -1514,6 +1521,11 @@ static void scan_db() {
 				out = repeats = vstrand_out.at(found_io).out;
 			}
 
+			//toggles
+			if (RSHIFTLSHIFT_Only) ul = rri = 0;
+			if (ccm) { ccm = 0; close_ctrl_mode = !close_ctrl_mode; }
+			if (strand[0]) { strand.clear(); if (utf_8) strand_v.clear(); }
+
 		}
 		else {
 			close_run();
@@ -1530,8 +1542,6 @@ static void scan_db() {
 	if (replacerDb[0]) is_replacer(out); //<r:>
 
 	Multi_ multi_;
-
-	if (strand[0]) strand.clear();
 
 	size_t f_{};
 	for (c = 0; c < out.length(); ++c) {
@@ -2897,7 +2907,6 @@ static void run(wstring ai) {
 static void repeat() {
 	switch (repeat_switch) {
 	case 0: {
-		if (strand[0]) strand.clear();
 		thread thread(run, *&repeats);
 		thread.detach();
 	}
@@ -3449,7 +3458,6 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 			if (cs) {
 				strand.clear(); prints();
 				if (utf_8) strand_v.clear();
-
 			}
 			return 0;
 		}
