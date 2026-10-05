@@ -2951,8 +2951,8 @@ static void key(wstring_view k) {
 		if (utf_8) strand_v.clear();
 		switch (strand[0]) {
 		case 0:
-			if (utf_8) strand_v.emplace_back(L"<");
 			strand = L"<";
+			if (utf_8) strand_v.emplace_back(strand);
 			break;
 		case '<':
 			if (strand == L"<") {
@@ -3156,6 +3156,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 						kb_release(VK_ESCAPE); kb(VK_BACK);
 						print_ctrls();
 						show_fg();
+						if (strand[0]) { strand.clear(); if (utf_8) strand_v.clear(); }
 						return 0;
 					}
 					if (ran) { stop = 1; return 0; }
@@ -3403,7 +3404,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 									if (RSHIFTLSHIFT_Only > 1) strand = L"";
 									else strand = strand[0] == '<' ? L"" : L"<";
 								}
-								if (utf_8) { strand_v.clear(); if (strand[0]) strand_v.emplace_back(L"<"); }
+								if (utf_8) { strand_v.clear(); if (strand[0]) strand_v.emplace_back(strand); }
 								prints();
 								return 0;
 							}
@@ -3474,7 +3475,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 			else if (!strand[0]) { strand = RSHIFTLSHIFT_Only > 1 && rri == 1 ? L"" : L"<"; }
 			else if (RSHIFTLSHIFT_Only > 1) strand = L"";
 			else strand = strand[0] == '<' ? L"" : L"<";
-			if (utf_8) { strand_v.clear(); if (strand[0]) strand_v.emplace_back(L"<"); }
+			if (utf_8) { strand_v.clear(); if (strand[0]) strand_v.emplace_back(strand); }
 			prints();
 			clear = 0;
 			return 0;
