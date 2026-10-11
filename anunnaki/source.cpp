@@ -204,7 +204,8 @@ static void make_vdb_table() {
 		if (s.in[0] && s.in[s.in.length() - 1] == '\\' && delimiter[0] == '\n') { //multi_line
 			multi_line = 1;
 			s.in.pop_back();
-			cells = wstring_to_utf8(s.in) + cells.substr(s.in.length() + 1);
+			string t = wstring_to_utf8(s.in);
+			cells = t + cells.substr(t.length() + 1);
 			continue;
 		}
 
@@ -1450,6 +1451,11 @@ static void multi_sleep(Multi_ &multi_, unsigned long ms, unsigned long n = 1) {
 static void close_run() {
 	out_speed = 0;
 
+	if (ran) {
+		ran = 0;
+		if (!multi_run) multi_run = 1;
+	}
+	
 	//no hit
 	if (strand[0] && strand[strand.length() - 1] == '>') {
 		if (RSHIFTLSHIFT_Only) ul = rri = 0;
@@ -1459,21 +1465,16 @@ static void close_run() {
 		if (utf_8) strand_v.clear();
 	}
 
-	if (ran) {
-		ran = 0;
-		if (!multi_run) multi_run = 1;
-	}
-	
 	if (!strand[0]) prints();
 }
 
 static void scan_db() {
 
+	if (out[0]) out.clear();
 	if (repeats[0] != '>') found_io_repeat = 0;
 	found_io = 0;
 	stop = 0;
 	clo = 0;
-	if (out[0]) out.clear();
 
 	if (repeats[0] == '>') {
 		repeats = repeats.substr(1);
