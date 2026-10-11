@@ -69,7 +69,6 @@ double ic = 0; //<+> icp
 int qxcc = 0, qycc = 0;
 short unlock_it = 1;
 unsigned short unlock_sc{60}, ul{};
-unsigned short out_speed = 0;
 unsigned short frequency = 160;
 unsigned short strand_length = 2;
 unsigned short RSHIFTLSHIFT_Only = 0, rri = 0; //RSHIFTLSHIFT_Only 1 or 2 for L+ESC mode on; 2 for non <
@@ -103,7 +102,7 @@ bool auto_bs_repeat_key = 0;
 bool ctrl_scan_only_mode = 0;
 bool close_ctrl_mode = 1;
 bool hold_shift = 0;
-bool out_sleep = 1;
+bool out_sleep = 0;
 bool stop = 0, pause = 0;
 bool utf_8 = 1, u8{};
 bool ccm = 0; //close_ctrl_mode toggle
@@ -123,6 +122,8 @@ struct Multi_ {
 		c_{};
 	double
 		icp_{};
+	unsigned long
+		out_speed_{};
 	bool
 		br_{};
 };
@@ -877,18 +878,6 @@ static void printSe() {
 	cout << endl;
 }
 
-static void mouseEvent(short key) {
-	INPUT ip{}; ip.type = INPUT_MOUSE; ip.mi.time = 0;
-	ip.mi.dwFlags = key;
-	if (key == MOUSEEVENTF_HWHEEL) {
-		if (qq.substr(0, 3) == L"<sr") ip.mi.mouseData = WHEEL_DELTA;//scroll right
-		else if (qq.substr(0, 3) == L"<sd") { ip.mi.dwFlags = MOUSEEVENTF_WHEEL; ip.mi.mouseData = -WHEEL_DELTA; }//scroll down
-		else if (qq.substr(0, 3) == L"<sl") ip.mi.mouseData = -WHEEL_DELTA;//scroll left
-		else if (qq.substr(0, 3) == L"<su") { ip.mi.dwFlags = MOUSEEVENTF_WHEEL; ip.mi.mouseData = WHEEL_DELTA; }//scroll up
-	}
-	SendInput(1, &ip, sizeof(ip));
-}
-
 static void kb_hold(short key) {
 	INPUT ip{}; ip.type = INPUT_KEYBOARD; ip.ki.wVk = key; ip.ki.time = 0;
 	if (key == VK_LMENU || key == VK_CONTROL) ip.ki.dwFlags = 0; else ip.ki.dwFlags = 1;
@@ -924,7 +913,92 @@ static void sleep(unsigned long ms) {
 	this_thread::sleep_for(chrono::milliseconds(ms));
 }
 
-static void kb_press(wstring_view s, short key) {
+static void if_esc() {
+	if (GetAsyncKeyState(VK_ESCAPE) < 0)
+		stop = 1;
+}
+
+static void if_pause() {
+	while (1) {
+		if (!pause) break;
+
+		if (GetAsyncKeyState(VK_ESCAPE) < 0)
+			stop = 1;
+
+		if (stop) { pause = 0; if (show_strand) cout << " ESC\n"; break; }
+
+		sleep(frequency);
+	}
+}
+
+static void multi_sleep(Multi_& multi_, unsigned long ms, unsigned long n = 1) {
+	if (ms > 0) {
+		multi_.out_ = out;
+		multi_.qq_ = qq;
+		multi_.qp_ = qp;
+		multi_.c_ = c;
+
+		if (n > 1 && ms > n) {
+			for (size_t i = 0; i < n; ++i) {
+				if_esc();
+				if (pause) if_pause();
+				if (stop) break;
+				this_thread::sleep_for(chrono::milliseconds(ms / n));
+			}
+		}
+		else
+			this_thread::sleep_for(chrono::milliseconds(ms));
+
+		out = multi_.out_;
+		qq = multi_.qq_;
+		qp = multi_.qp_;
+		c = multi_.c_;
+	}
+}
+
+static void mouse_press(Multi_& multi_, wstring_view s, short key) {
+	if (!qp[0])
+		qp = L"1";
+	else if (check_if_num(qp, L"<key #>") == L"") {
+		printq(); return;
+	}
+
+	INPUT ip{};
+	ip.type = INPUT_MOUSE;
+
+	unsigned x = stoul(qp);
+	
+	for (unsigned j = 0; j < x; ++j) {
+		if (GetAsyncKeyState(VK_ESCAPE) < 0) { stop = 1; return; }
+
+		ip.mi.dwFlags = key;
+
+		if (s[1] == 's') { //scroll
+			if (s[2] == 'l' || s[2] == 'd')
+				ip.mi.mouseData = -WHEEL_DELTA;
+			else
+				ip.mi.mouseData = WHEEL_DELTA;
+		}
+
+		SendInput(1, &ip, sizeof(ip)); //hold
+
+		if (s[2] == 'c') {
+			if (s[1] == 'l')
+				ip.mi.dwFlags = MOUSEEVENTF_LEFTUP;
+			else if (s[1] == 'r')
+				ip.mi.dwFlags = MOUSEEVENTF_RIGHTUP;
+			else 
+				ip.mi.dwFlags = MOUSEEVENTF_MIDDLEUP;
+
+			SendInput(1, &ip, sizeof(ip)); //release
+		}
+		
+		if (multi_.out_speed_ && x != j + 1) multi_sleep(multi_, multi_.out_speed_);
+	}
+
+}
+
+static void kb_press(Multi_& multi_, wstring_view s, short key) {
 	if (!qp[0])
 		qp = L"1";
 	else if (check_if_num(qp, L"<key #>") == L"") { //if (qp[0] < '0' || qp[0] > '9' || )
@@ -942,34 +1016,13 @@ static void kb_press(wstring_view s, short key) {
 	//if (to_wstring(x).length() != qp.length()) {
 	//	printq(); return;
 	//}
+
 	for (unsigned j = 0; j < x; ++j) {
-		if (GetAsyncKeyState(VK_ESCAPE))
-			return;
+		if (GetAsyncKeyState(VK_ESCAPE) < 0) { stop = 1; return; }
 
-		if (s.length() == 3) {
-			key = 0;
-			if (s == L"<lc") {
-				mouseEvent(MOUSEEVENTF_LEFTDOWN);
-				mouseEvent(MOUSEEVENTF_LEFTUP);
-			}
-			else if (s == L"<rc") {
-				mouseEvent(MOUSEEVENTF_RIGHTDOWN);
-				mouseEvent(MOUSEEVENTF_RIGHTUP);
-			}
-			else if (s == L"<mc") {
-				mouseEvent(MOUSEEVENTF_MIDDLEDOWN);
-				mouseEvent(MOUSEEVENTF_MIDDLEUP);
-			}
-			else if (s == L"<sd" || s == L"<sr"
-				|| s == L"<su" || s == L"<sl")
-				mouseEvent(MOUSEEVENTF_HWHEEL);
-			else
-				SendInput(2, ip, sizeof(ip[0]));
-		}
-		else
-			SendInput(2, ip, sizeof(ip[0]));
+		SendInput(2, ip, sizeof(ip[0]));
 
-		if (out_speed > 0 && x != j + 1) sleep(out_speed);
+		if (multi_.out_speed_ && x != j + 1) multi_sleep(multi_, multi_.out_speed_);
 	}
 
 }
@@ -994,9 +1047,8 @@ static void setQxQy(wstring_view x) {
 static wstring is_replacer(wstring& q) { // Replacer | {var:} {var-} {var>} | <r:>
 	if (q.find('{') != string::npos && q.find('}') != string::npos) {
 		wstring tqg = q, tq{};
-		GetAsyncKeyState(VK_ESCAPE);
 		while (tqg.find('{') != string::npos) {
-			if (GetAsyncKeyState(VK_ESCAPE)) { stop = 1; break; }
+			if (GetAsyncKeyState(VK_ESCAPE) < 0) { stop = 1; break; }
 			q = q.substr(q.find('{') + 1);
 			q = q.substr(0, q.find(L'}'));
 			tq = q;
@@ -1049,7 +1101,7 @@ static void connect(const wstring_view v) {
 	if (auto it = vstrand_map.find(v.substr(0, v.length() - 2)); it != vstrand_map.end()) {
 		out = vstrand_out.at(it->second).out + qq.substr(v.length() + (qq[1] == '!'));
 		if (replacerDb[0]) is_replacer(out);
-		if (out_speed) out_sleep = 0;
+		if (out_sleep) out_sleep = 0;
 		c = -1;
 	}
 	else printq();
@@ -1405,52 +1457,7 @@ static wstring getAppT() {
 	return title;
 }
 
-static void if_esc() {
-	GetAsyncKeyState(VK_ESCAPE); if (GetAsyncKeyState(VK_ESCAPE))
-		stop = 1;
-}
-
-static void if_pause() {
-	while (1) {
-		if (!pause) break;
-
-		if (GetAsyncKeyState(VK_ESCAPE))
-			stop = 1;
-
-		if (stop) { pause = 0; if (show_strand) cout << " ESC\n"; break; }
-
-		sleep(frequency);
-	}
-}
-
-static void multi_sleep(Multi_ &multi_, unsigned long ms, unsigned long n = 1) {
-	if (ms > 0) {
-		multi_.out_ = out;
-		multi_.qq_ = qq;
-		multi_.qp_ = qp;
-		multi_.c_ = c;
-
-		if (n > 1 && ms > n) {
-			for (size_t i = 0; i < n; ++i) {
-				if_esc();
-				if (pause) if_pause();
-				if (stop) break;
-				this_thread::sleep_for(chrono::milliseconds(ms / n));
-			}
-		}
-		else
-			this_thread::sleep_for(chrono::milliseconds(ms));
-
-		out = multi_.out_;
-		qq = multi_.qq_;
-		qp = multi_.qp_;
-		c = multi_.c_;
-	}
-}
-
 static void close_run() {
-	out_speed = 0;
-
 	if (ran) {
 		ran = 0;
 		if (!multi_run) multi_run = 1;
@@ -1550,11 +1557,11 @@ static void scan_db() {
 		if_esc();
 		if (pause) if_pause();
 		if (stop) { stop = 0; break; }
-
-		if (out_speed > 0) {
+		
+		if (multi_.out_speed_) {
 			if (out_sleep) {
 				if (c)
-					multi_sleep(multi_, out_speed);
+					multi_sleep(multi_, multi_.out_speed_);
 			}
 			out_sleep = 1;
 		}
@@ -1725,7 +1732,7 @@ static void scan_db() {
 					if (b) {
 						out = x + qq.substr(qq.find('>') + 1);
 						c = -1;
-						if (out_speed > 0) out_sleep = 0;
+						if (multi_.out_speed_) out_sleep = 0;
 						ic = multi_.icp_;
 					}
 					else c += f_;
@@ -1770,9 +1777,9 @@ static void scan_db() {
 			case 'A':
 				switch (qq[2]) {
 				case 'l':
-					if (qqb(L"<alt>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LMENU); c += f_; }
-					else if (qqb(L"<alt~>")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LMENU); c += f_; }
-					else if (qqb(L"<alt")) { kb_press(L"<alt", VK_LMENU); c += f_; }
+					if (qqb(L"<alt>")) { if (multi_.out_speed_) out_sleep = 0; kb_hold(VK_LMENU); c += f_; }
+					else if (qqb(L"<alt~>")) { if (multi_.out_speed_) out_sleep = 0; kb_release(VK_LMENU); c += f_; }
+					else if (qqb(L"<alt")) { kb_press(multi_, L"<alt", VK_LMENU); c += f_; }
 					else printq();
 					break;
 				case 'p':
@@ -1795,7 +1802,7 @@ static void scan_db() {
 				}
 				break;
 			case'b':
-				if (qqb(L"<bs")) { kb_press(L"<bs", VK_BACK); c += f_; }
+				if (qqb(L"<bs")) { kb_press(multi_, L"<bs", VK_BACK); c += f_; }
 				else printq();
 				break;
 			case'c':
@@ -1809,9 +1816,9 @@ static void scan_db() {
 					else printq();
 					break;
 				case 't':
-					if (qqb(L"<ctrl>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_CONTROL); c += f_; }
-					else if (qqb(L"<ctrl~>")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_CONTROL); c += f_; }
-					else if (qqb(L"<ctrl")) { kb_press(L"<ctrl", VK_CONTROL); c += f_; }
+					if (qqb(L"<ctrl>")) { if (multi_.out_speed_) out_sleep = 0; kb_hold(VK_CONTROL); c += f_; }
+					else if (qqb(L"<ctrl~>")) { if (multi_.out_speed_) out_sleep = 0; kb_release(VK_CONTROL); c += f_; }
+					else if (qqb(L"<ctrl")) { kb_press(multi_, L"<ctrl", VK_CONTROL); c += f_; }
 					else printq();
 					break;
 				case 'b': //<cb> <cb:> <cb+:> <cb-:>
@@ -1833,7 +1840,7 @@ static void scan_db() {
 					else printq();
 					break;
 				case 'a':
-					if (qqb(L"<caps")) { kb_press(L"<caps", VK_CAPITAL); c += f_; }
+					if (qqb(L"<caps")) { kb_press(multi_, L"<caps", VK_CAPITAL); c += f_; }
 					else printq();
 					break;
 				default:
@@ -1872,7 +1879,7 @@ static void scan_db() {
 					else printq();
 					break;
 				case 'o':
-					if (qqb(L"<down")) { kb_press(L"<down", VK_DOWN); c += f_; }
+					if (qqb(L"<down")) { kb_press(multi_, L"<down", VK_DOWN); c += f_; }
 					else printq();
 					break;
 				case 'n':
@@ -1883,7 +1890,7 @@ static void scan_db() {
 					else printq();
 					break;
 				case 'e':
-					if (qqb(L"<delete")) { kb_press(L"<delete", VK_DELETE); c += f_; }
+					if (qqb(L"<delete")) { kb_press(multi_, L"<delete", VK_DELETE); c += f_; }
 					else printq();
 					break;
 				default:
@@ -1893,15 +1900,15 @@ static void scan_db() {
 			case'e':
 				switch (qq[3]) {
 				case 't':
-					if (qqb(L"<enter")) { kb_press(L"<enter", VK_RETURN); c += f_; }
+					if (qqb(L"<enter")) { kb_press(multi_, L"<enter", VK_RETURN); c += f_; }
 					else printq();
 					break;
 				case 'd':
-					if (qqb(L"<end")) { kb_press(L"<end", VK_END); c += f_; }
+					if (qqb(L"<end")) { kb_press(multi_, L"<end", VK_END); c += f_; }
 					else printq();
 					break;
 				case 'c':
-					if (qqb(L"<esc")) { kb_press(L"<esc", VK_ESCAPE); c += f_; }
+					if (qqb(L"<esc")) { kb_press(multi_, L"<esc", VK_ESCAPE); c += f_; }
 					else printq();
 					break;
 				default:
@@ -1911,42 +1918,42 @@ static void scan_db() {
 			case'f':
 				switch (qq[2]) {
 				case '1':
-					if (qqb(L"<f10")) { kb_press(L"<f10", VK_F10); c += f_; }
-					else if (qqb(L"<f11")) { kb_press(L"<f11", VK_F11); c += f_; }
-					else if (qqb(L"<f12")) { kb_press(L"<f12", VK_F12); c += f_; }
-					else if (qqb(L"<f1")) { kb_press(L"<f1", VK_F1); c += f_; }
+					if (qqb(L"<f10")) { kb_press(multi_, L"<f10", VK_F10); c += f_; }
+					else if (qqb(L"<f11")) { kb_press(multi_, L"<f11", VK_F11); c += f_; }
+					else if (qqb(L"<f12")) { kb_press(multi_, L"<f12", VK_F12); c += f_; }
+					else if (qqb(L"<f1")) { kb_press(multi_, L"<f1", VK_F1); c += f_; }
 					else printq();
 					break;
 				case '2':
-					if (qqb(L"<f2")) { kb_press(L"<f2", VK_F2); c += f_; }
+					if (qqb(L"<f2")) { kb_press(multi_, L"<f2", VK_F2); c += f_; }
 					else printq();
 					break;
 				case '3':
-					if (qqb(L"<f3")) { kb_press(L"<f3", VK_F3); c += f_; }
+					if (qqb(L"<f3")) { kb_press(multi_, L"<f3", VK_F3); c += f_; }
 					else printq();
 					break;
 				case '4':
-					if (qqb(L"<f4")) { kb_press(L"<f4", VK_F4); c += f_; }
+					if (qqb(L"<f4")) { kb_press(multi_, L"<f4", VK_F4); c += f_; }
 					else printq();
 					break;
 				case '5':
-					if (qqb(L"<f5")) { kb_press(L"<f5", VK_F5); c += f_; }
+					if (qqb(L"<f5")) { kb_press(multi_, L"<f5", VK_F5); c += f_; }
 					else printq();
 					break;
 				case '6':
-					if (qqb(L"<f6")) { kb_press(L"<f6", VK_F6); c += f_; }
+					if (qqb(L"<f6")) { kb_press(multi_, L"<f6", VK_F6); c += f_; }
 					else printq();
 					break;
 				case '7':
-					if (qqb(L"<f7")) { kb_press(L"<f7", VK_F7); c += f_; }
+					if (qqb(L"<f7")) { kb_press(multi_, L"<f7", VK_F7); c += f_; }
 					else printq();
 					break;
 				case '8':
-					if (qqb(L"<f8")) { kb_press(L"<f8", VK_F8); c += f_; }
+					if (qqb(L"<f8")) { kb_press(multi_, L"<f8", VK_F8); c += f_; }
 					else printq();
 					break;
 				case '9':
-					if (qqb(L"<f9")) { kb_press(L"<f9", VK_F9); c += f_; }
+					if (qqb(L"<f9")) { kb_press(multi_, L"<f9", VK_F9); c += f_; }
 					else printq();
 					break;
 				default:
@@ -1954,7 +1961,7 @@ static void scan_db() {
 				}
 				break;
 			case'h':
-				if (qqb(L"<home")) { kb_press(L"<home", VK_HOME); c += f_; }
+				if (qqb(L"<home")) { kb_press(multi_, L"<home", VK_HOME); c += f_; }
 				else printq();
 				break;
 			case'i':
@@ -2491,7 +2498,7 @@ static void scan_db() {
 								out = l[0] == '<'
 									? l + L">" + qq.substr(qq.find('>') + 1)
 									: L"<" + l + L">";//<if+:# true->
-								if (out_speed > 0) out_sleep = 0;
+								if (multi_.out_speed_) out_sleep = 0;
 								c = -1; break;
 							}
 							c = out.length(); break;
@@ -2502,7 +2509,7 @@ static void scan_db() {
 					}
 					break;
 				case 'n':
-					if (qqb(L"<ins")) { kb_press(L"<ins", VK_INSERT); c += f_; }
+					if (qqb(L"<ins")) { kb_press(multi_, L"<ins", VK_INSERT); c += f_; }
 					else printq();
 					break;
 				default:
@@ -2523,29 +2530,23 @@ static void scan_db() {
 					else printq();
 					break;
 				case 'c':
-					if (qqb(L"<lc")) { kb_press(L"<lc", VK_F7); c += f_; }//left click
+					if (qqb(L"<lc")) { mouse_press(multi_, L"<lc", MOUSEEVENTF_LEFTDOWN); c += f_; }//left click
 					else printq();
 					break;
 				case 'h':
-					if (qqb(L"<lh>")) { //left hold
-						mouseEvent(MOUSEEVENTF_LEFTDOWN);
-						c += f_;
-					}
+					if (qqb(L"<lh>")) { mouse_press(multi_, L"<lh", MOUSEEVENTF_LEFTDOWN); c += f_; } //left hold
 					else printq();
 					break;
 				case 'r':
-					if (qqb(L"<lr>")) { //left release
-						mouseEvent(MOUSEEVENTF_LEFTUP);
-						c += f_;
-					}
+					if (qqb(L"<lr>")) { mouse_press(multi_, L"<lr", MOUSEEVENTF_LEFTUP); c += f_; } //left release
 					else printq();
 					break;
 				case 'e':
-					if (qqb(L"<left")) { kb_press(L"<left", VK_LEFT); c += f_; }
+					if (qqb(L"<left")) { kb_press(multi_, L"<left", VK_LEFT); c += f_; }
 					else printq();
 					break;
 				case 's':
-					if (qqb(L"<ls")) { kb_press(L"<ls", VK_F7); c += f_; } //hscroll+
+					if (qqb(L"<ls")) { kb_press(multi_, L"<ls", VK_F7); c += f_; } //hscroll+
 					else printq();
 					break;
 				default:
@@ -2560,30 +2561,24 @@ static void scan_db() {
 						run(utf8_to_wstring(delimiter));
 						repeats = w;
 						c += f_;
-						if (out_speed > 0) out_sleep = 0;
+						if (multi_.out_speed_) out_sleep = 0;
 					}
 					else printq();
 					break;
 				case 'c':
-					if (qqb(L"<mc")) { kb_press(L"<mc", VK_F7); c += f_; }//middle click
+					if (qqb(L"<mc")) { mouse_press(multi_, L"<mc", MOUSEEVENTF_MIDDLEDOWN); c += f_; } //middle click
 					else printq();
 					break;
 				case 'h':
-					if (qqb(L"<mh>")) {//middle hold
-						mouseEvent(MOUSEEVENTF_MIDDLEDOWN);
-						c += f_;
-					}
+					if (qqb(L"<mh>")) { mouse_press(multi_, L"<mh", MOUSEEVENTF_MIDDLEDOWN); c += f_; } //middle hold
 					else printq();
 					break;
 				case 'r':
-					if (qqb(L"<mr>")) {//middle release
-						mouseEvent(MOUSEEVENTF_MIDDLEUP);
-						c += f_;
-					}
+					if (qqb(L"<mr>")) { mouse_press(multi_, L"<mr", MOUSEEVENTF_MIDDLEUP); c += f_; } //middle release
 					else printq();
 					break;
 				case 'e':
-					if (qqb(L"<menu")) { kb_press(L"<menu", VK_APPS); c += f_; }
+					if (qqb(L"<menu")) { kb_press(multi_, L"<menu", VK_APPS); c += f_; }
 					else printq();
 					break;
 				default:
@@ -2593,19 +2588,19 @@ static void scan_db() {
 			case'p':
 				switch (qq[2]) {
 				case 'a':
-					if (qqb(L"<pause")) { kb_press(L"<pause", VK_PAUSE); c += f_; GetAsyncKeyState(VK_PAUSE); }
+					if (qqb(L"<pause")) { kb_press(multi_, L"<pause", VK_PAUSE); c += f_; GetAsyncKeyState(VK_PAUSE); }
 					else printq();
 					break;
 				case 's':
-					if (qqb(L"<ps")) { kb_press(L"<ps", VK_SNAPSHOT); c += f_; }
+					if (qqb(L"<ps")) { kb_press(multi_, L"<ps", VK_SNAPSHOT); c += f_; }
 					else printq();
 					break;
 				case 'u':
-					if (qqb(L"<pu")) { kb_press(L"<pu", VK_PRIOR); c += f_; }//pgup
+					if (qqb(L"<pu")) { kb_press(multi_, L"<pu", VK_PRIOR); c += f_; }//pgup
 					else printq();
 					break;
 				case 'd':
-					if (qqb(L"<pd")) { kb_press(L"<pd", VK_NEXT); c += f_; }//pgdn
+					if (qqb(L"<pd")) { kb_press(multi_, L"<pd", VK_NEXT); c += f_; }//pgdn
 					else printq();
 					break;
 				default:
@@ -2625,27 +2620,22 @@ static void scan_db() {
 					else printq();
 					break;
 				case 'c':
-					if (qqb(L"<rc")) { kb_press(L"<rc", VK_F7); c += f_; } else printq();
+					if (qqb(L"<rc")) { mouse_press(multi_, L"<rc", MOUSEEVENTF_RIGHTDOWN); c += f_; } //right click
+					else printq();
 					break;
 				case 'h':
-					if (qqb(L"<rh>")) {//right hold
-						mouseEvent(MOUSEEVENTF_RIGHTDOWN);
-						c += f_;
-					}
+					if (qqb(L"<rh>")) { mouse_press(multi_, L"<rh", MOUSEEVENTF_RIGHTDOWN); c += f_; } //right hold
 					else printq();
 					break;
 				case 'r':
-					if (qqb(L"<rr>")) {//right release
-						mouseEvent(MOUSEEVENTF_RIGHTUP);
-						c += f_;
-					}
+					if (qqb(L"<rr>")) { mouse_press(multi_, L"<rr", MOUSEEVENTF_RIGHTUP); c += f_; } //right release
 					else printq();
 					break;
 				case 'i':
-					if (qqb(L"<right")) { kb_press(L"<right", VK_RIGHT); c += f_; } else printq();
+					if (qqb(L"<right")) { kb_press(multi_, L"<right", VK_RIGHT); c += f_; } else printq();
 					break;
 				case 's':
-					if (qqb(L"<rs")) { kb_press(L"<rs", VK_F7); c += f_; }
+					if (qqb(L"<rs")) { kb_press(multi_, L"<rs", VK_F7); c += f_; }
 					else printq();//hscroll-
 					break;
 				case 'G':
@@ -2653,7 +2643,7 @@ static void scan_db() {
 					if (qqb(L"<rgb")) {//print r g b x y | <rgb> <rgb 5000>
 						out = getRGB(qq[4] == '>' ? 1 : 2);
 						if (out[0]) c = -1;
-						if (out_speed > 0) out_sleep = 0;
+						if (multi_.out_speed_) out_sleep = 0;
 					}
 					else printq();
 					break;
@@ -2712,35 +2702,35 @@ static void scan_db() {
 					else printq();
 					break;
 				case 'h':
-					if (qqb(L"<shift>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LSHIFT); c += f_; }
-					else if (qqb(L"<shift~>")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LSHIFT); kb_release(VK_RSHIFT); c += f_; }
-					else if (qqb(L"<shift")) { kb_press(L"<shift", VK_LSHIFT); c += f_; }
+					if (qqb(L"<shift>")) { if (multi_.out_speed_) out_sleep = 0; kb_hold(VK_LSHIFT); c += f_; }
+					else if (qqb(L"<shift~>")) { if (multi_.out_speed_) out_sleep = 0; kb_release(VK_LSHIFT); kb_release(VK_RSHIFT); c += f_; }
+					else if (qqb(L"<shift")) { kb_press(multi_, L"<shift", VK_LSHIFT); c += f_; }
 					else printq();
 					break;
 				case 'p':
 					if (qqb(L"<speed:")) {
 						if (check_if_num(qp, L"<speed: {slot}>") != L"") {
-							out_speed = stoi(qp); c += f_; out_sleep = 0;
+							multi_.out_speed_ = stoul(qp); c += f_; out_sleep = 0;
 						}
 						else printq();
 					}
-					else if (qqb(L"<space")) { kb_press(L"<space", VK_SPACE); c += f_; }
+					else if (qqb(L"<space")) { kb_press(multi_, L"<space", VK_SPACE); c += f_; }
 					else printq();
 					break;
 				case 'd':
-					if (qqb(L"<sd")) { kb_press(L"<sd", VK_F7); c += f_; }//scroll down
+					if (qqb(L"<sd")) { mouse_press(multi_, L"<sd", MOUSEEVENTF_WHEEL); c += f_; } //scroll down
 					else printq();
 					break;
 				case 'r':
-					if (qqb(L"<sr")) { kb_press(L"<sr", VK_F7); c += f_; }//scroll right
+					if (qqb(L"<sr")) { mouse_press(multi_, L"<sr", MOUSEEVENTF_HWHEEL); c += f_; } //scroll right
 					else printq();
 					break;
 				case 'u':
-					if (qqb(L"<su")) { kb_press(L"<su", VK_F7); c += f_; }//scroll up
+					if (qqb(L"<su")) { mouse_press(multi_, L"<su", MOUSEEVENTF_WHEEL); c += f_; } //scroll up
 					else printq();
 					break;
 				case 'l':
-					if (qqb(L"<sl")) { kb_press(L"<sl", VK_F7); c += f_; }//scroll left
+					if (qqb(L"<sl")) { mouse_press(multi_, L"<sl", MOUSEEVENTF_HWHEEL); c += f_; } //scroll left
 					else printq();
 					break;
 				default:
@@ -2748,19 +2738,19 @@ static void scan_db() {
 				}
 				break;
 			case 't':
-				if (qqb(L"<tab")) { kb_press(L"<tab", VK_TAB); c += f_; }
+				if (qqb(L"<tab")) { kb_press(multi_, L"<tab", VK_TAB); c += f_; }
 				else if (qqb(L"<time>") || qqb(L"<time~")) {
 					wstring w{}; getTime(w);
 					if (qq[5] == '>') w = w.substr(w.rfind(L" ") - 8, 8);
 					out = w + qq.substr(qq.find('>') + 1, qq.length());
 					c = -1;
-					if (out_speed > 0) out_sleep = 0;
+					if (multi_.out_speed_) out_sleep = 0;
 				}
 				else printq();
 				break;
 			case 'u':
 				if (qqb(L"<upper>")) { wstring s = L"", cb = L""; cb = cbGet(); for (size_t x = 0; x < cb.length(); ++x) { s += toupper(cb[x]); } cbSet(s); c += f_; }
-				else if (qqb(L"<up")) { kb_press(L"<up", VK_UP); c += f_; }
+				else if (qqb(L"<up")) { kb_press(multi_, L"<up", VK_UP); c += f_; }
 				else printq();
 				break;
 			case 'v':
@@ -2768,9 +2758,9 @@ static void scan_db() {
 				else printq();
 				break;
 			case 'w':
-				if (qqb(L"<win>")) { if (out_speed > 0) out_sleep = 0; kb_hold(VK_LWIN); c += f_; }
-				else if (qqb(L"<win~>")) { if (out_speed > 0) out_sleep = 0; kb_release(VK_LWIN); c += f_; }
-				else if (qqb(L"<win")) { kb_press(L"<win", VK_LWIN); c += f_; }
+				if (qqb(L"<win>")) { if (multi_.out_speed_) out_sleep = 0; kb_hold(VK_LWIN); c += f_; }
+				else if (qqb(L"<win~>")) { if (multi_.out_speed_) out_sleep = 0; kb_release(VK_LWIN); c += f_; }
+				else if (qqb(L"<win")) { kb_press(multi_, L"<win", VK_LWIN); c += f_; }
 				else printq();
 				break;
 			case 'x':
@@ -2802,7 +2792,7 @@ static void scan_db() {
 						POINT pt; GetCursorPos(&pt);
 						out = to_wstring(pt.x) + L" " + to_wstring(pt.y) + qq.substr(qq.find('>') + 1, qq.length());
 						c = -1;
-						if (out_speed > 0) out_sleep = 0;
+						if (multi_.out_speed_) out_sleep = 0;
 					}
 					else printq();
 					break;
@@ -3103,44 +3093,44 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 
 				//VK_ESCAPE
 				if (p->scanCode == 1) {
-					GetAsyncKeyState('P'); if (GetAsyncKeyState('P')) { //p + esc: <xy:>
+					if (GetAsyncKeyState('P') < 0) { //p + esc: <xy:>
 						kb_release(VK_ESCAPE); kb(VK_BACK);
 						repeat_switch = 1;
 						repeat();
 						if (utf_8) strand_v.clear();
 						return 0;
 					}
-					GetAsyncKeyState('R'); if (GetAsyncKeyState('R')) { //r + esc: <rgb:>
+					if (GetAsyncKeyState('R') < 0) { //r + esc: <rgb:>
 						kb_release(VK_ESCAPE); kb(VK_BACK);
 						repeat_switch = 2;
 						repeat();
 						if (utf_8) strand_v.clear();
 						return 0;
 					}
-					GetAsyncKeyState('G'); if (GetAsyncKeyState('G')) { //g + esc: <RGB~:> to cb
+					if (GetAsyncKeyState('G') < 0) { //g + esc: <RGB~:> to cb
 						kb_release(VK_ESCAPE); kb(VK_BACK);
 						repeat_switch = 3;
 						repeat();
 						if (utf_8) strand_v.clear();
 						return 0;
 					}
-					GetAsyncKeyState('A'); if (GetAsyncKeyState('A')) { //a + esc: <app:>
+					if (GetAsyncKeyState('A') < 0) { //a + esc: <app:>
 						kb_release(VK_ESCAPE); kb(VK_BACK);
 						repeat_switch = 4;
 						repeat();
 						if (utf_8) strand_v.clear();
 						return 0;
 					}
-					GetAsyncKeyState(VK_OEM_PLUS); if (GetAsyncKeyState(VK_OEM_PLUS)) { //= + esc: repeat
+					if (GetAsyncKeyState(VK_OEM_PLUS) < 0) { //= + esc: repeat
 						kb_release(VK_ESCAPE); kb(VK_BACK);
 						if (utf_8) strand_v.clear();
 						repeat(); return 1;
 					}
-					GetAsyncKeyState(VK_OEM_COMMA); if (GetAsyncKeyState(VK_OEM_COMMA)) { //, + esc
+					if (GetAsyncKeyState(VK_OEM_COMMA) < 0) { //, + esc
 						rshift_lshift = 1;
 						return 0;
 					}
-					GetAsyncKeyState('L'); if (GetAsyncKeyState('L')) { //L + esc
+					if (GetAsyncKeyState('L') < 0) { //L + esc
 						kb(VK_BACK);
 						static unsigned short escL = RSHIFTLSHIFT_Only;
 						if (RSHIFTLSHIFT_Only) RSHIFTLSHIFT_Only = 0;
@@ -3150,19 +3140,19 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 						sleep(frequency);
 						return 0;
 					}
-					GetAsyncKeyState('X'); if (GetAsyncKeyState('X')) { //x + esc
+					if (GetAsyncKeyState('X') < 0) { //x + esc
 						kb(VK_BACK);
 						PostQuitMessage(0);
 						return 0;
 					}
-					GetAsyncKeyState('H'); if (GetAsyncKeyState('H')) { //h + esc
+					if (GetAsyncKeyState('H') < 0) { //h + esc
 						kb_release(VK_ESCAPE); kb(VK_BACK);
 						sleep(1);
 						toggle_visibility();
 						prints();
 						return 0;
 					}
-					GetAsyncKeyState(VK_OEM_2); if (GetAsyncKeyState(VK_OEM_2)) { //? + esc
+					if (GetAsyncKeyState(VK_OEM_2) < 0) { //? + esc
 						kb_release(VK_ESCAPE); kb(VK_BACK);
 						print_ctrls();
 						show_fg();
@@ -3377,7 +3367,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 				switch (p->scanCode) {
 				case 42: //Lshift
 					isLshiftPressed = 0;
-					GetAsyncKeyState(VK_RSHIFT); if (GetAsyncKeyState(VK_RSHIFT) && !isRctrlPressed) {
+					if (GetAsyncKeyState(VK_RSHIFT) < 0 && !isRctrlPressed) {
 						++clear;
 						rshift_lshift = 1;
 					}
@@ -3390,7 +3380,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 						bool extended = (p->flags & LLKHF_EXTENDED) != 0;
 						if (!extended) {
 							isLctrlPressed = 0;
-							GetAsyncKeyState(VK_RCONTROL); if (GetAsyncKeyState(VK_RCONTROL))
+							if (GetAsyncKeyState(VK_RCONTROL) < 0)
 								repeated = 1;
 							if (breaker > 1) repeated = 0;
 						}
@@ -3504,9 +3494,8 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 
 int main() {
 	{
-		GetAsyncKeyState(VK_ESCAPE);
 		for (size_t i = 0; i <= 1; ++i) {
-			if (GetAsyncKeyState(VK_ESCAPE)) break;
+			if (GetAsyncKeyState(VK_ESCAPE) < 0) break;
 			WCHAR t[MAX_PATH];
 			GetSystemDirectoryW(t, MAX_PATH);
 			wstring c = L"";
@@ -3525,7 +3514,7 @@ int main() {
 				wcout << database << " not found.\n[1] auto create \n(delete c:\\anu to reset)\n\n";
 				bool num = 0;
 				for (;; sleep(frequency)) {
-					GetAsyncKeyState(VK_ESCAPE); if (GetAsyncKeyState(VK_ESCAPE)) { RemoveDirectoryW(c.c_str()); break; }
+					if (GetAsyncKeyState(VK_ESCAPE) < 0) { RemoveDirectoryW(c.c_str()); break; }
 					if (GetAsyncKeyState('1') || GetAsyncKeyState(VK_NUMPAD1)) { num = 1; break; }
 				}
 				if (num) {
