@@ -431,8 +431,7 @@ static void showOutsMsg(wstring s, wstring w, wstring s1 = L"", bool make_color 
 			}
 			if (t) continue;
 		}
-		if (w[x] < 128) wcout << w[x];
-		else { wcout << w.substr(x, 2); ++x; }
+		wcout << w[x];
 	}
 	if (s1[0]) wcout << s1;
 }
@@ -974,20 +973,20 @@ static void mouse_press(Multi_& multi_, wstring_view s, short key) {
 		ip.mi.dwFlags = key;
 
 		if (s[1] == 's') { //scroll
-			if (s[2] == 'l' || s[2] == 'd')
+			if (s[2] == 'l' || s[2] == 'd') //<sl>|<sd>
 				ip.mi.mouseData = -WHEEL_DELTA;
-			else
+			else //<sr>|<su>
 				ip.mi.mouseData = WHEEL_DELTA;
 		}
 
 		SendInput(1, &ip, sizeof(ip)); //hold
 
 		if (s[2] == 'c') {
-			if (s[1] == 'l')
+			if (s[1] == 'l') //<lc>
 				ip.mi.dwFlags = MOUSEEVENTF_LEFTUP;
-			else if (s[1] == 'r')
+			else if (s[1] == 'r') //<rc>
 				ip.mi.dwFlags = MOUSEEVENTF_RIGHTUP;
-			else 
+			else //<mc>
 				ip.mi.dwFlags = MOUSEEVENTF_MIDDLEUP;
 
 			SendInput(1, &ip, sizeof(ip)); //release
@@ -1012,12 +1011,9 @@ static void kb_press(Multi_& multi_, wstring_view s, short key) {
 	ip[1] = ip[0];
 	ip[1].ki.dwFlags = 2;
 
-	unsigned x = stoul(qp);
-	//if (to_wstring(x).length() != qp.length()) {
-	//	printq(); return;
-	//}
+	unsigned long x = stoul(qp);
 
-	for (unsigned j = 0; j < x; ++j) {
+	for (unsigned long j = 0; j < x; ++j) {
 		if (GetAsyncKeyState(VK_ESCAPE) < 0) { stop = 1; return; }
 
 		SendInput(2, ip, sizeof(ip[0]));
