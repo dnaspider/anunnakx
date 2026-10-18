@@ -313,7 +313,7 @@ static void kb(wchar_t b) { //out char
 static void showOutsMsg(wstring s, wstring w, wstring s1 = L"", bool make_color = 1) {
 	HANDLE hC = GetStdHandle(STD_OUTPUT_HANDLE);
 	size_t x = 0; bool t = 0;
-	auto write = [&x, &t, &make_color](wstring w) {
+	auto write = [&x, &t, &make_color](wstring_view w) {
 		wcout << w;
 		if (make_color) ++x;
 		t = 1;
@@ -401,10 +401,10 @@ static void showOutsMsg(wstring s, wstring w, wstring s1 = L"", bool make_color 
 				break;
 			case 'i': //input
 			if (make_color) {
-				Strand _ = vstrand.at(found_io);
-				write(_.in);
-				if (_.in[0] != '<')
-					wcout << _.g;
+				wstring_view _ = vstrand.at(found_io).in;
+				write(_);
+				if (_[0] != '<')
+					wcout << vstrand.at(found_io).g;
 			}
 			break;
 			case ',': //clock
@@ -2906,17 +2906,19 @@ static void repeat() {
 		run(getXY());
 
 		show_strand = s;
+		strand.clear();
 		prints();
 	}
 		break;
 	case 2: //r + esc
 		printq();
 		run(getRGB());
+		strand.clear();
 		break;
 	case 3: //g + esc
 		qq.clear();
 		getRGB(1);
-		if (strand[0]) strand.clear();
+		strand.clear();
 		prints();
 		break;
 	case 4: { //a + esc
@@ -2931,6 +2933,7 @@ static void repeat() {
 		repeat_switch = 4;
 
 		show_strand = s;
+		strand.clear();
 		prints();
 	}
 		break;
