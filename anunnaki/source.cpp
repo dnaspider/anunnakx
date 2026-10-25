@@ -1353,8 +1353,8 @@ Debug 2
 RSHIFTLSHIFT_Only 2
 0: off, otherwise 1: <, 2: blank input
 
-Unlock_Key 60 02
-60: sc for F2, 0: no backspace (optional), 2: press twice
+UnlockKey 60 01
+60: sc for F2, 0: no backspace (optional), 1: press once
 
 CtrlKey 29 700
 29: sc for RCTRL, 700: press within duration (ms), 0: disable CtrlKey & RSHIFT+RCTRL & RCTRL+LCTRL
