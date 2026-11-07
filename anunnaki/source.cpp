@@ -965,9 +965,9 @@ static void mouse_press(Multi_& multi_, wstring_view s, short key) {
 	INPUT ip{};
 	ip.type = INPUT_MOUSE;
 
-	unsigned x = stoul(qp);
+	unsigned long x = stoul(qp);
 	
-	for (unsigned j = 0; j < x; ++j) {
+	for (unsigned long j = 0; j < x; ++j) {
 		if (GetAsyncKeyState(VK_ESCAPE) < 0) { stop = 1; return; }
 
 		ip.mi.dwFlags = key;
@@ -2947,7 +2947,7 @@ static void scan() {
 static void key(wstring_view k) {
 
 	if (k == L">") {
-		if (utf_8) strand_v.clear();
+		if (utf_8) strand_v.clear();		
 		switch (strand[0]) {
 		case 0:
 			strand = L"<";
@@ -2962,6 +2962,7 @@ static void key(wstring_view k) {
 		default:
 			strand.append(k);
 			prints();
+			cout.clear();
 			thread thread(scan); thread.detach();
 			return;
 		}
@@ -3262,7 +3263,6 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 				case 87: if (Kb_Key_F11[0]) key(Kb_Key_F11); return 0;
 				case 88: if (Kb_Key_F12[0]) key(Kb_Key_F12); return 0;
 
-
 				case 70: if (Kb_Key_ScLk[0]) key(Kb_Key_ScLk); return 0;
 				case 57: if (Kb_Key_Space[0]) key(Kb_Key_Space); return 0;
 				case 15: if (Kb_Key_Tab[0]) key(Kb_Key_Tab); return 0;
@@ -3522,7 +3522,7 @@ int main() {
     __ // \  / \\\ __\n
    / / \\\  \/  // \ \ \n
   / /   \7DNASPiDER\R  \ \ \n
-  \ \\   //\7 4g \R\\\   / /\n
+  \ \\   //\7 5g \R\\\   / /\n
    \_\ //  /\  \\\ /_/\n
        \\\\ /  \ //\n
          \    /\n\n
