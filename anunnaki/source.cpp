@@ -2947,7 +2947,7 @@ static void scan() {
 static void key(wstring_view k) {
 
 	if (k == L">") {
-		if (utf_8) strand_v.clear();		
+		if (utf_8) strand_v.clear();
 		switch (strand[0]) {
 		case 0:
 			strand = L"<";
