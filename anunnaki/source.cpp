@@ -81,6 +81,7 @@ unsigned short mvdb = 0; //make vstrand to
 
 unsigned short breaker{}, breaker_c{};
 unsigned short clear{};
+char isKeyPressed{}; //key(">")
 bool uit0{}; //unlock_key unlock_it[0] is 0
 bool isUnlockPressed{};
 bool isWinKeyPressed{};
@@ -2946,7 +2947,10 @@ static void scan() {
 
 static void key(wstring_view k) {
 
+	if (isKeyPressed > 1 && k == L">") {
+		isKeyPressed = 0; return; }
 	if (k == L">") {
+		++isKeyPressed;
 		if (utf_8) strand_v.clear();
 		switch (strand[0]) {
 		case 0:
@@ -2962,7 +2966,6 @@ static void key(wstring_view k) {
 		default:
 			strand.append(k);
 			prints();
-			cout.clear();
 			thread thread(scan); thread.detach();
 			return;
 		}
@@ -3350,6 +3353,14 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 				break;
 			case WM_KEYUP:
 			case WM_SYSKEYUP: {
+				if (isKeyPressed > 1) {
+					isKeyPressed = 0; strand = L""; return 0;
+				}
+
+				if (isKeyPressed) { 
+					++isKeyPressed; key(L">"); return 0;
+				}
+
 				if (p->scanCode == 91 || p->scanCode == 92) { isWinKeyPressed = 0; return 0; }
 				if (pause || isWinKeyPressed) return 0;
 
